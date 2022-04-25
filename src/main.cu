@@ -79,8 +79,11 @@ __global__ void pathcalc(float *d_z, mc_results<float> d_results)
 }
 
 
-__global__ void testpathcalc(float *d_z, mc_results<float> d_results) {
-  binary_asian<float> prod;
+template <class T>
+__global__ 
+void testpathcalc(float *d_z, mc_results<float> d_results) {
+  /* binary_asian<float> prod; */
+  T prod;
   // Index into random variables
   prod.ind = threadIdx.x + N*blockIdx.x*blockDim.x;
 
@@ -160,8 +163,7 @@ int main(int argc, const char **argv){
   printf("\n====== GPU ======\n");
   cudaEventRecord(start);
 
-  /* pathcalc<<<NPATH/64, 64>>>(d_z, d_results); */
-  testpathcalc<<<NPATH/64, 64>>>(d_z, d_results);
+  testpathcalc< lookback<float> > <<<NPATH/64, 64>>>(d_z, d_results);
   getLastCudaError("pathcalc execution failed\n");
 
   cudaEventRecord(stop);
