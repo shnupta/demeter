@@ -11,6 +11,8 @@
 
 #include <helper_cuda.h>
 
+#include "common.cuh"
+
 ////////////////////////////////////////////////////////////////////////
 // CUDA global constants
 ////////////////////////////////////////////////////////////////////////
@@ -28,7 +30,7 @@ __device__ float normpdf(float x) {
 ////////////////////////////////////////////////////////////////////////
 
 
-__global__ void pathcalc(float *d_z, float *d_v, float *d_delta, float *d_gamma)
+__global__ void pathcalc(float *d_z, mc_results<float> results)
 {
   float s1, y1, payoff, avg_s1, delta, gamma;
   int   ind;
@@ -72,9 +74,9 @@ __global__ void pathcalc(float *d_z, float *d_v, float *d_delta, float *d_gamma)
   gamma = ((100.0f * exp(-r * T)) / (100.0f * 100.0f * sigma * sqrt(dt))) * normpdf(psi_d);
   /* printf("delta = %f\n", delta); */
 
-  d_v[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
-  d_delta[threadIdx.x + blockIdx.x*blockDim.x] = delta;
-  d_gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
+  results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
+  results.delta[threadIdx.x + blockIdx.x*blockDim.x] = delta;
+  results.gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
 }
 
 
@@ -87,7 +89,8 @@ int main(int argc, const char **argv){
   int     NPATH=960000, h_N=100;
   /* int     NPATH=64, h_N=1; */
   float   h_T, h_r, h_sigma, h_dt, h_omega;
-  float  *h_v, *d_v, *d_z, *h_delta, *d_delta, *h_gamma, *d_gamma;
+  float *d_z;
+  mc_results<float> h_results, d_results;
   double  sum1, sum2;
 
   // initialise card
@@ -103,14 +106,10 @@ int main(int argc, const char **argv){
 
   // allocate memory on host and device
 
-  h_v = (float *)malloc(sizeof(float)*NPATH);
-  h_delta = (float *)malloc(sizeof(float)*NPATH);
-  h_gamma = (float *)malloc(sizeof(float)*NPATH);
+  h_results.AllocateHost(NPATH);
+  d_results.AllocateDevice(NPATH);
 
-  checkCudaErrors( cudaMalloc((void **)&d_v, sizeof(float)*NPATH) );
   checkCudaErrors( cudaMalloc((void **)&d_z, sizeof(float)*h_N*NPATH) );
-  checkCudaErrors( cudaMalloc((void **)&d_delta, sizeof(float)*h_N*NPATH) );
-  checkCudaErrors( cudaMalloc((void **)&d_gamma, sizeof(float)*h_N*NPATH) );
 
   // define constants and transfer to GPU
 
@@ -147,7 +146,7 @@ int main(int argc, const char **argv){
 
   cudaEventRecord(start);
 
-  pathcalc<<<NPATH/64, 64>>>(d_z, d_v, d_delta, d_gamma);
+  pathcalc<<<NPATH/64, 64>>>(d_z, d_results);
   getLastCudaError("pathcalc execution failed\n");
 
   cudaEventRecord(stop);
@@ -158,12 +157,7 @@ int main(int argc, const char **argv){
 
   // copy back results
 
-  checkCudaErrors( cudaMemcpy(h_v, d_v, sizeof(float)*NPATH,
-                   cudaMemcpyDeviceToHost) );
-  checkCudaErrors( cudaMemcpy(h_delta, d_delta, sizeof(float)*NPATH,
-                   cudaMemcpyDeviceToHost) );
-  checkCudaErrors( cudaMemcpy(h_gamma, d_gamma, sizeof(float)*NPATH,
-                   cudaMemcpyDeviceToHost) );
+  h_results.CopyFromDevice(NPATH, d_results);
 
   // compute average
 
@@ -172,10 +166,10 @@ int main(int argc, const char **argv){
   float deltasum = 0.0;
   float gammasum = 0.0;
   for (int i=0; i<NPATH; i++) {
-    sum1 += h_v[i];
-    sum2 += h_v[i]*h_v[i];
-    deltasum += h_delta[i];
-    gammasum += h_gamma[i];
+    sum1 += h_results.price[i];
+    sum2 += h_results.price[i]*h_results.price[i];
+    deltasum += h_results.delta[i];
+    gammasum += h_results.gamma[i];
   }
 
   printf("\nAverage value and standard deviation of error  = %13.8f %13.8f\n\n",
@@ -189,13 +183,10 @@ int main(int argc, const char **argv){
 
   // Release memory and exit cleanly
 
-  free(h_v);
-  free(h_delta);
-  free(h_gamma);
-  checkCudaErrors( cudaFree(d_v) );
+  h_results.ReleaseHost();
+  d_results.ReleaseDevice();
+
   checkCudaErrors( cudaFree(d_z) );
-  checkCudaErrors( cudaFree(d_delta) );
-  checkCudaErrors( cudaFree(d_gamma) );
 
   // CUDA exit -- needed to flush printf write buffer
 
