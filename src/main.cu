@@ -16,16 +16,21 @@
 ////////////////////////////////////////////////////////////////////////
 
 __constant__ int   N;
-__constant__ float T, r, sigma, dt;
+__constant__ float T, r, sigma, dt, omega;
+
+
+__device__ float normpdf(float x) {
+  return exp(-0.5f * x * x) * (1.0f / sqrt(2.0f * M_PI));
+}
 
 ////////////////////////////////////////////////////////////////////////
 // kernel routine
 ////////////////////////////////////////////////////////////////////////
 
 
-__global__ void pathcalc(float *d_z, float *d_v, float *d_delta)
+__global__ void pathcalc(float *d_z, float *d_v, float *d_delta, float *d_gamma)
 {
-  float s1, y1, payoff, avg_s1, delta;
+  float s1, y1, payoff, avg_s1, delta, gamma;
   int   ind;
 
   // move array pointers to correct position
@@ -57,13 +62,19 @@ __global__ void pathcalc(float *d_z, float *d_v, float *d_delta)
 
   // put payoff value into device array
 
-  /* payoff = avg_s1 - 100.0f > 0.0f ? exp(-r * T) : 0.0f; */ 
-  payoff = exp(-r * T) * max(s1 - 100.0f, 0.0f);
-  delta = s1 - 100.0f > 0.0f ? exp(-r * T) * (s1 / 100.0f) : 0.0f;
+  /* payoff = avg_s1 - 100.0f > 0.0f ? exp(-r * T) : 0.0f; // binary asian */
+  /* payoff = exp(-r * T) * max(s1 - 100.0f, 0.0f); */
+  payoff = exp(-r * T) * max(avg_s1 - 100.0f, 0.0f); // arithmetic asian
+  /* delta = s1 - 100.0f > 0.0f ? exp(-r * T) * (s1 / 100.0f) : 0.0f; */
+  float psi_d = (log(100.0f) - log(avg_s1) - omega * dt) / (sigma * sqrt(dt));
+  /* delta = (exp(-r * T) / 100.0f * sigma * sqrt(dt)) * normpdf(psi_d); // bin */
+  delta = exp(r * (dt - T)) * (avg_s1 / 100.0f) * (1 - normcdf(psi_d - sigma * sqrt(dt))); // arith
+  gamma = ((100.0f * exp(-r * T)) / (100.0f * 100.0f * sigma * sqrt(dt))) * normpdf(psi_d);
   /* printf("delta = %f\n", delta); */
 
   d_v[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
   d_delta[threadIdx.x + blockIdx.x*blockDim.x] = delta;
+  d_gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
 }
 
 
@@ -75,8 +86,8 @@ int main(int argc, const char **argv){
     
   int     NPATH=960000, h_N=100;
   /* int     NPATH=64, h_N=1; */
-  float   h_T, h_r, h_sigma, h_dt;
-  float  *h_v, *d_v, *d_z, *h_delta, *d_delta;
+  float   h_T, h_r, h_sigma, h_dt, h_omega;
+  float  *h_v, *d_v, *d_z, *h_delta, *d_delta, *h_gamma, *d_gamma;
   double  sum1, sum2;
 
   // initialise card
@@ -94,23 +105,27 @@ int main(int argc, const char **argv){
 
   h_v = (float *)malloc(sizeof(float)*NPATH);
   h_delta = (float *)malloc(sizeof(float)*NPATH);
+  h_gamma = (float *)malloc(sizeof(float)*NPATH);
 
   checkCudaErrors( cudaMalloc((void **)&d_v, sizeof(float)*NPATH) );
   checkCudaErrors( cudaMalloc((void **)&d_z, sizeof(float)*h_N*NPATH) );
   checkCudaErrors( cudaMalloc((void **)&d_delta, sizeof(float)*h_N*NPATH) );
+  checkCudaErrors( cudaMalloc((void **)&d_gamma, sizeof(float)*h_N*NPATH) );
 
   // define constants and transfer to GPU
 
-  h_T     = 0.08333333;
-  h_r     = 0.03f;
+  h_T     = 1.0f;
+  h_r     = 0.1f;
   h_sigma = 0.2f;
   h_dt    = h_T/h_N;
+  h_omega = h_r - (h_sigma * h_sigma) / 2.0f;
 
   checkCudaErrors( cudaMemcpyToSymbol(N,    &h_N,    sizeof(h_N)) );
   checkCudaErrors( cudaMemcpyToSymbol(T,    &h_T,    sizeof(h_T)) );
   checkCudaErrors( cudaMemcpyToSymbol(r,    &h_r,    sizeof(h_r)) );
   checkCudaErrors( cudaMemcpyToSymbol(sigma,&h_sigma,sizeof(h_sigma)) );
   checkCudaErrors( cudaMemcpyToSymbol(dt,   &h_dt,   sizeof(h_dt)) );
+  checkCudaErrors( cudaMemcpyToSymbol(omega,   &h_omega,   sizeof(h_omega)) );
 
   // random number generation
 
@@ -132,7 +147,7 @@ int main(int argc, const char **argv){
 
   cudaEventRecord(start);
 
-  pathcalc<<<NPATH/64, 64>>>(d_z, d_v, d_delta);
+  pathcalc<<<NPATH/64, 64>>>(d_z, d_v, d_delta, d_gamma);
   getLastCudaError("pathcalc execution failed\n");
 
   cudaEventRecord(stop);
@@ -147,21 +162,26 @@ int main(int argc, const char **argv){
                    cudaMemcpyDeviceToHost) );
   checkCudaErrors( cudaMemcpy(h_delta, d_delta, sizeof(float)*NPATH,
                    cudaMemcpyDeviceToHost) );
+  checkCudaErrors( cudaMemcpy(h_gamma, d_gamma, sizeof(float)*NPATH,
+                   cudaMemcpyDeviceToHost) );
 
   // compute average
 
   sum1 = 0.0;
   sum2 = 0.0;
   float deltasum = 0.0;
+  float gammasum = 0.0;
   for (int i=0; i<NPATH; i++) {
     sum1 += h_v[i];
     sum2 += h_v[i]*h_v[i];
     deltasum += h_delta[i];
+    gammasum += h_gamma[i];
   }
 
   printf("\nAverage value and standard deviation of error  = %13.8f %13.8f\n\n",
 	 sum1/NPATH, sqrt((sum2/NPATH - (sum1/NPATH)*(sum1/NPATH))/NPATH) );
   printf("\nAverage delta = %13.8f\n\n", deltasum / NPATH);
+  printf("\nAverage gamma = %13.8f\n\n", gammasum / NPATH);
 
   // Tidy up library
 
@@ -171,9 +191,11 @@ int main(int argc, const char **argv){
 
   free(h_v);
   free(h_delta);
+  free(h_gamma);
   checkCudaErrors( cudaFree(d_v) );
   checkCudaErrors( cudaFree(d_z) );
   checkCudaErrors( cudaFree(d_delta) );
+  checkCudaErrors( cudaFree(d_gamma) );
 
   // CUDA exit -- needed to flush printf write buffer
 
