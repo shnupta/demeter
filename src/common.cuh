@@ -3,6 +3,15 @@
 #include <cuda.h>
 #include <helper_cuda.h>
 
+/* General kernels */
+__host__ __device__ float normpdf(float x) {
+  return exp(-0.5f * x * x) * (1.0f / sqrt(2.0f * M_PI));
+}
+
+/* Device contants */
+__constant__ int   N;
+__constant__ float T, r, sigma, dt, omega, s0, k;
+
 /* Struct to be passed to the MC method to store calculated values */
 template <class T>
 struct mc_results {

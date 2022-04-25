@@ -1,11 +1,12 @@
 find_package(CUDA REQUIRED)
 include_directories("${CUDA_INCLUDE_DIRS}")
 
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -rdc=true")
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -rdc=true -G -g") # Debug
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -rdc=true") # Release
+# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -rdc=true -G -g") # Debug
 
 set(DEMETERHEADERS
 	common.cuh
+	product.cuh
 	) 
 
 # set_target_properties(libbonsai PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
