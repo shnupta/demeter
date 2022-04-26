@@ -16,73 +16,12 @@
 #include "product.cuh"
 
 ////////////////////////////////////////////////////////////////////////
-// CUDA global constants
-////////////////////////////////////////////////////////////////////////
-
-/* __constant__ int   N; */
-/* __constant__ float T, r, sigma, dt, omega, s0, k; */
-
-
-////////////////////////////////////////////////////////////////////////
 // kernel routine
 ////////////////////////////////////////////////////////////////////////
 
-
-__global__ void pathcalc(float *d_z, mc_results<float> d_results)
-{
-  float s1, y1, payoff, avg_s1, psi_d, delta, vega, gamma;
-  int   ind;
-
-  // move array pointers to correct position
-
-  // version 1
-  ind = threadIdx.x + N*blockIdx.x*blockDim.x;
-
-  // version 2 (bad)
-  // ind = 2*N*threadIdx.x + 2*N*blockIdx.x*blockDim.x;
-
-
-  // path calculation
-
-  s1 = s0;
-  avg_s1 = s0;
-  /* printf("Initial s1 = %f\n", s1); */
-
-  for (int n=0; n<N; n++) {
-    y1   = d_z[ind];
-    // version 1
-    ind += blockDim.x;      // shift pointer to next element
-
-    s1 = s1 * (1.0f + r * dt + sigma * sqrt(dt) * y1);
-    avg_s1 += s1;
-    /* printf("New s1 = %f\n", s1); */
-  }
-
-  avg_s1 /= N;
-
-  // put payoff value into device array
-
-  /* payoff = avg_s1 - 100.0f > 0.0f ? exp(-r * T) : 0.0f; // binary asian */
-  /* payoff = exp(-r * T) * max(s1 - 100.0f, 0.0f); */
-  payoff = exp(-r * T) * max(avg_s1 - k, 0.0f); // arithmetic asian
-  /* delta = s1 - 100.0f > 0.0f ? exp(-r * T) * (s1 / 100.0f) : 0.0f; */
-  psi_d = (log(k) - log(avg_s1) - omega * dt) / (sigma * sqrt(dt));
-  /* delta = (exp(-r * T) / 100.0f * sigma * sqrt(dt)) * normpdf(psi_d); // bin */
-  delta = exp(r * (dt - T)) * (avg_s1 / s0) * (1 - normcdf(psi_d - sigma * sqrt(dt))); // arith
-  vega = 0.0f;
-  gamma = ((k * exp(-r * T)) / (s0 * s0 * sigma * sqrt(dt))) * normpdf(psi_d);
-  /* printf("delta = %f\n", delta); */
-
-  d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
-  d_results.delta[threadIdx.x + blockIdx.x*blockDim.x] = delta;
-  d_results.gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
-}
-
-
 template <class T>
 __global__ 
-void testpathcalc(float *d_z, mc_results<float> d_results) {
-  /* binary_asian<float> prod; */
+void pathcalc(float *d_z, mc_results<float> d_results) {
   T prod;
   // Index into random variables
   prod.ind = threadIdx.x + N*blockIdx.x*blockDim.x;
@@ -163,7 +102,7 @@ int main(int argc, const char **argv){
   printf("\n====== GPU ======\n");
   cudaEventRecord(start);
 
-  testpathcalc< lookback<float> > <<<NPATH/64, 64>>>(d_z, d_results);
+  pathcalc< arithmetic_asian<float> > <<<NPATH/64, 64>>>(d_z, d_results);
   getLastCudaError("pathcalc execution failed\n");
 
   cudaEventRecord(stop);
