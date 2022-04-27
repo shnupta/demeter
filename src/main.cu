@@ -13,23 +13,29 @@
 #include <helper_cuda.h>
 
 #include "common.cuh"
+#include "kernels.cuh"
 #include "product.cuh"
+#include "timer.cuh"
 
-////////////////////////////////////////////////////////////////////////
-// kernel routine
-////////////////////////////////////////////////////////////////////////
+using namespace demeter;
 
-template <class T>
-__global__ 
-void pathcalc(float *d_z, mc_results<float> d_results) {
-  T prod;
-  // Index into random variables
-  prod.ind = threadIdx.x + N*blockIdx.x*blockDim.x;
 
-  prod.SimulatePath(N, d_z);
-  prod.CalculatePayoffs(d_results);
+__global__ void TransformSobol(float *d_z, float *temp_z) {
+  int desired_idx = threadIdx.x + N * blockIdx.x * blockDim.x;
+  int temp_idx = threadIdx.x + blockIdx.x * blockDim.x;
+
+  // TODO: Check for some other desired indices that it transfers correctly
+  bool print = false; // desired_idx == N * 1 * blockDim.x;
+
+  for (int n = 0; n < N; n++) {
+    if (print) printf("Moving from index %d (dim %d) to %d (block %d dim %d)\n",
+        temp_idx, temp_idx / PATHS, desired_idx, desired_idx / (N * blockDim.x), (desired_idx / blockDim.x) % N);
+
+    d_z[desired_idx] = temp_z[temp_idx];
+    desired_idx += blockDim.x;
+    temp_idx += PATHS;
+  }
 }
-
 
 ////////////////////////////////////////////////////////////////////////
 // Main program
@@ -37,23 +43,16 @@ void pathcalc(float *d_z, mc_results<float> d_results) {
 
 int main(int argc, const char **argv){
     
-  int NPATH=960000, h_N=100;
+  int NPATH=960000, h_N=300;
   /* int     NPATH=64, h_N=1; */
   float h_T, h_r, h_sigma, h_dt, h_omega, h_s0, h_k;
-  float *d_z;
-  mc_results<float> h_results, d_results;
-  double sum1, sum2, deltasum, vegasum, gammasum;
+  float *d_z, *temp_z;
+  MCResults<float> h_results, d_results;
+  Timer timer;
 
   // initialise card
 
   findCudaDevice(argc, argv);
-
-  // initialise CUDA timing
-
-  float milli;
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
 
   // allocate memory on host and device
 
@@ -61,6 +60,7 @@ int main(int argc, const char **argv){
   d_results.AllocateDevice(NPATH);
 
   checkCudaErrors( cudaMalloc((void **)&d_z, sizeof(float)*h_N*NPATH) );
+  checkCudaErrors( cudaMalloc((void **)&temp_z, sizeof(float)*h_N*NPATH) );
 
   // define constants and transfer to GPU
 
@@ -73,6 +73,7 @@ int main(int argc, const char **argv){
   h_k       = 100.0f;
 
   checkCudaErrors( cudaMemcpyToSymbol(N,    &h_N,    sizeof(h_N)) );
+  checkCudaErrors( cudaMemcpyToSymbol(PATHS,    &NPATH,    sizeof(NPATH)) );
   checkCudaErrors( cudaMemcpyToSymbol(T,    &h_T,    sizeof(h_T)) );
   checkCudaErrors( cudaMemcpyToSymbol(r,    &h_r,    sizeof(h_r)) );
   checkCudaErrors( cudaMemcpyToSymbol(sigma,&h_sigma,sizeof(h_sigma)) );
@@ -83,89 +84,71 @@ int main(int argc, const char **argv){
 
   // random number generation
 
-  cudaEventRecord(start);
+  timer.StartDeviceTimer();
 
   curandGenerator_t gen;
-  checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT) );
-  checkCudaErrors( curandSetPseudoRandomGeneratorSeed(gen, 1234ULL) );
-  checkCudaErrors( curandGenerateNormal(gen, d_z, h_N*NPATH, 0.0f, 1.0f) );
- 
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-  cudaEventElapsedTime(&milli, start, stop);
+  /* checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT) ); */
+  /* checkCudaErrors( curandSetPseudoRandomGeneratorSeed(gen, 1234ULL) ); */
+  /* checkCudaErrors( curandGenerateNormal(gen, d_z, h_N*NPATH, 0.0f, 1.0f) ); */
+  checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_QUASI_DEFAULT) );
+  checkCudaErrors( curandSetQuasiRandomGeneratorDimensions(gen, h_N) );
+  checkCudaErrors( curandGenerateNormal(gen, temp_z, h_N*NPATH, 0.0f, 1.0f) );
+
+  timer.StopDeviceTimer();
 
   printf("CURAND normal RNG  execution time (ms): %f,  samples/sec: %e \n",
-          milli, h_N*NPATH/(0.001*milli));
+          timer.GetDeviceElapsedTime(), h_N*NPATH/(0.001*timer.GetDeviceElapsedTime()));
+
+  TransformSobol<<<NPATH/64, 64>>>(d_z, temp_z);
 
   // execute kernel and time it
 
   printf("\n====== GPU ======\n");
-  cudaEventRecord(start);
+  timer.StartDeviceTimer();
 
-  pathcalc< arithmetic_asian<float> > <<<NPATH/64, 64>>>(d_z, d_results);
+  MCSimulation< ArithmeticAsian<float> > <<<NPATH/64, 64>>>(d_z, d_results);
   getLastCudaError("pathcalc execution failed\n");
 
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-  cudaEventElapsedTime(&milli, start, stop);
+  timer.StopDeviceTimer();
 
-  printf("Monte Carlo kernel execution time (ms): %f \n",milli);
+  printf("Monte Carlo kernel execution time (ms): %f \n", timer.GetDeviceElapsedTime());
 
-  // copy back results
+  // copy back results and compute stats
 
   h_results.CopyFromDevice(NPATH, d_results);
-
-  // compute average
-
-  sum1 = 0.0;
-  sum2 = 0.0;
-  deltasum = 0.0;
-  gammasum = 0.0;
-  for (int i=0; i<NPATH; i++) {
-    sum1 += h_results.price[i];
-    sum2 += h_results.price[i]*h_results.price[i];
-    deltasum += h_results.delta[i];
-    gammasum += h_results.gamma[i];
-  }
-
-  printf("\nAverage value and standard deviation of error  = %13.8f %13.8f\n\n",
-	 sum1/NPATH, sqrt((sum2/NPATH - (sum1/NPATH)*(sum1/NPATH))/NPATH) );
-  printf("Average delta = %13.8f\n\n", deltasum / NPATH);
-  printf("Average gamma = %13.8f\n\n", gammasum / NPATH);
+  h_results.CalculateStatistics(NPATH);
+  h_results.PrintStatistics();
 
   // CPU calculation
-  printf("====== CPU ======\n");
+  printf("\n====== CPU ======\n");
 
   // Copy random variables
   float *h_z = (float *) malloc(sizeof(float) * h_N * NPATH);
-  checkCudaErrors( cudaMemcpy(h_z, d_z, sizeof(float) * h_N * NPATH, cudaMemcpyDeviceToHost) );
+  float *h_temp = (float *) malloc(sizeof(float) * h_N * NPATH);
+  checkCudaErrors( cudaMemcpy(h_temp, temp_z, sizeof(float) * h_N * NPATH, cudaMemcpyDeviceToHost) );
 
-  arithmetic_asian<float> asian;
-  auto h_start = std::chrono::steady_clock::now();
-  asian.HostMC(NPATH, h_N, h_z, h_r, h_dt, h_sigma, h_s0, h_k, h_T, h_omega, h_results);
-  auto h_end = std::chrono::steady_clock::now();
-  float h_milli = std::chrono::duration_cast<std::chrono::milliseconds>(h_end - h_start).count();
-  printf("CPU execution time (ms): %f \n", h_milli);
-
-
-  sum1 = 0.0;
-  sum2 = 0.0;
-  deltasum = 0.0;
-  gammasum = 0.0;
-  for (int i=0; i<NPATH; i++) {
-    sum1 += h_results.price[i];
-    sum2 += h_results.price[i]*h_results.price[i];
-    deltasum += h_results.delta[i];
-    gammasum += h_results.gamma[i];
+  // Rejig for sobol dimensions
+  int i = 0, j = 0;
+  while (i < NPATH) {
+    while (j < h_N) {
+      h_z[i * h_N + j] = h_temp[i + j * NPATH];
+      j++;
+    }
+    i++;
+    j = 0;
   }
 
-  printf("\nAverage value and standard deviation of error  = %13.8f %13.8f\n\n",
-	 sum1/NPATH, sqrt((sum2/NPATH - (sum1/NPATH)*(sum1/NPATH))/NPATH) );
-  printf("Average delta = %13.8f\n\n", deltasum / NPATH);
-  printf("Average gamma = %13.8f\n\n", gammasum / NPATH);
 
+  ArithmeticAsian<float> prod;
+  timer.StartHostTimer();
+  prod.HostMC(NPATH, h_N, h_z, h_r, h_dt, h_sigma, h_s0, h_k, h_T, h_omega, h_results);
+  timer.StopHostTimer();
+  printf("CPU execution time (ms): %f \n", timer.GetHostElapsedTime());
 
-  printf("\nGPU speedup over serial CPU: %fx\n", h_milli / milli);
+  h_results.CalculateStatistics(NPATH);
+  h_results.PrintStatistics();
+
+  printf("\nGPU speedup over serial CPU: %fx\n", timer.GetSpeedUpFactor());
 
   // Tidy up library
 
@@ -176,8 +159,8 @@ int main(int argc, const char **argv){
   h_results.ReleaseHost();
   d_results.ReleaseDevice();
   free(h_z);
-
   checkCudaErrors( cudaFree(d_z) );
+  checkCudaErrors( cudaFree(temp_z) );
 
   // CUDA exit -- needed to flush printf write buffer
 
