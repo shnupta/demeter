@@ -85,15 +85,22 @@ namespace demeter {
       }
 
     __host__
-      void PrintStatistics() {
-        printf("Average value and std of error = %13.8f %13.8f\n",
-            avg_price, err_price );
-        printf("Average delta and std of error = %13.8f %13.8f\n",
-            avg_delta, err_delta);
-        printf("Average vega and std of error  = %13.8f %13.8f\n",
-            avg_vega, err_vega);
-        printf("Average gamma and std of error = %13.8f %13.8f\n",
-            avg_gamma, err_gamma);
+      void PrintStatistics(bool print_header, const char* dev) {
+        if (print_header) {
+          printf("%6s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s |\n",
+              "dev", "price", "err", "delta", "err", "vega", "err", "gamma", "err");
+          printf("----------------------------------------------------------------------------------------------------------------------------------------\n");
+        }
+        printf("%6s | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f |\n",
+            dev, avg_price, err_price, avg_delta, err_delta, avg_vega, err_vega, avg_gamma, err_gamma);
+        /* printf("Average value and std of error = %13.8f %13.8f\n", */
+        /*     avg_price, err_price ); */
+        /* printf("Average delta and std of error = %13.8f %13.8f\n", */
+        /*     avg_delta, err_delta); */
+        /* printf("Average vega and std of error  = %13.8f %13.8f\n", */
+        /*     avg_vega, err_vega); */
+        /* printf("Average gamma and std of error = %13.8f %13.8f\n", */
+        /*     avg_gamma, err_gamma); */
       }
   };
 } // namespace demeter

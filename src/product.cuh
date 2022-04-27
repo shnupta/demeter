@@ -18,6 +18,10 @@ namespace demeter {
     S s1, avg_s1, y1, psi_d, payoff, delta, vega, gamma;  
     int ind;
 
+    void PrintName() {
+      printf("\n=== ArithmeticAsian ===\n");
+    }
+
     __device__
       void SimulatePath(const int N, float *d_z) override {
         s1 = s0;
@@ -88,6 +92,10 @@ namespace demeter {
     S s1, avg_s1, y1, psi_d, payoff, delta, vega, gamma;  
     int ind;
 
+    void PrintName() {
+      printf("\n=== BinaryAsian ===\n");
+    }
+
     __device__
       void SimulatePath(const int N, float *d_z) override {
         s1 = s0;
@@ -156,6 +164,10 @@ namespace demeter {
     S s1, s_max, psi_d, y1, payoff, delta, vega, gamma;  
     int ind;
 
+    void PrintName() {
+      printf("\n=== Lookback ===\n");
+    }
+    
     __device__
       void SimulatePath(const int N, float *d_z) override {
         s1 = s0;
