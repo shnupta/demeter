@@ -90,7 +90,7 @@ int main(int argc, const char **argv){
   /* checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT) ); */
   /* checkCudaErrors( curandSetPseudoRandomGeneratorSeed(gen, 1234ULL) ); */
   /* checkCudaErrors( curandGenerateNormal(gen, d_z, h_N*NPATH, 0.0f, 1.0f) ); */
-  checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_QUASI_DEFAULT) );
+  checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_QUASI_SCRAMBLED_SOBOL32) );
   checkCudaErrors( curandSetQuasiRandomGeneratorDimensions(gen, h_N) );
   checkCudaErrors( curandGenerateNormal(gen, temp_z, h_N*NPATH, 0.0f, 1.0f) );
 
@@ -106,7 +106,7 @@ int main(int argc, const char **argv){
   printf("\n====== GPU ======\n");
   timer.StartDeviceTimer();
 
-  MCSimulation< ArithmeticAsian<float> > <<<NPATH/64, 64>>>(d_z, d_results);
+  MCSimulation< Lookback<float> > <<<NPATH/64, 64>>>(d_z, d_results);
   getLastCudaError("pathcalc execution failed\n");
 
   timer.StopDeviceTimer();
@@ -139,7 +139,7 @@ int main(int argc, const char **argv){
   }
 
 
-  ArithmeticAsian<float> prod;
+  Lookback<float> prod;
   timer.StartHostTimer();
   prod.HostMC(NPATH, h_N, h_z, h_r, h_dt, h_sigma, h_s0, h_k, h_T, h_omega, h_results);
   timer.StopHostTimer();
