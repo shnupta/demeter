@@ -6,6 +6,7 @@ set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -rdc=true") # Release
 
 set(DEMETERHEADERS
 	common.cuh
+	kernels.cuh
 	product.cuh
 	) 
 
