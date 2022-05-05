@@ -10,8 +10,10 @@ namespace demeter {
   template <class T>
   struct MCResults {
     T *price, *delta, *vega, *gamma;
+    T *lr_delta;
     double avg_price = 0.0, avg_delta = 0.0, avg_vega = 0.0, avg_gamma = 0.0;
     double err_price = 0.0, err_delta = 0.0, err_vega = 0.0, err_gamma = 0.0;
+    double avg_lr_delta = 0.0, err_lr_delta = 0.0;
 
     __host__
       void AllocateHost(const int size) {
@@ -19,6 +21,7 @@ namespace demeter {
         delta = (T *) malloc(sizeof(T) * size);
         vega = (T *) malloc(sizeof(T) * size);
         gamma = (T *) malloc(sizeof(T) * size);
+        lr_delta = (T *) malloc(sizeof(T) * size);
       }
 
     __host__
@@ -27,6 +30,7 @@ namespace demeter {
         checkCudaErrors(cudaMalloc((void **) &delta, sizeof(T) * size));
         checkCudaErrors(cudaMalloc((void **) &vega, sizeof(T) * size));
         checkCudaErrors(cudaMalloc((void **) &gamma, sizeof(T) * size));
+        checkCudaErrors(cudaMalloc((void **) &lr_delta, sizeof(T) * size));
       }
 
     __host__
@@ -39,6 +43,8 @@ namespace demeter {
               sizeof(T) * size, cudaMemcpyDeviceToHost) );
         checkCudaErrors( cudaMemcpy(gamma, d_results.gamma,
               sizeof(T) * size, cudaMemcpyDeviceToHost) );
+        checkCudaErrors( cudaMemcpy(lr_delta, d_results.lr_delta,
+              sizeof(T) * size, cudaMemcpyDeviceToHost) );
       }
 
     __host__
@@ -47,6 +53,7 @@ namespace demeter {
         free(delta);
         free(vega);
         free(gamma);
+        free(lr_delta);
       }
 
     __host__
@@ -55,12 +62,14 @@ namespace demeter {
         checkCudaErrors(cudaFree(delta));
         checkCudaErrors(cudaFree(vega));
         checkCudaErrors(cudaFree(gamma));
+        checkCudaErrors(cudaFree(lr_delta));
       }
 
     __host__
       void CalculateStatistics(const int size) {
         double p_sum = 0.0, p_sum2 = 0.0, d_sum = 0.0, d_sum2 = 0.0,
                v_sum = 0.0, v_sum2 = 0.0, g_sum = 0.0, g_sum2 = 0.0;
+        double lr_d_sum = 0.0, lr_d_sum2 = 0.0;
 
         for (int i = 0; i < size; ++i) {
           p_sum += price[i];
@@ -71,28 +80,33 @@ namespace demeter {
           v_sum2 += vega[i] * vega[i];
           g_sum += gamma[i];
           g_sum2 += gamma[i] * gamma[i];
+          lr_d_sum += lr_delta[i];
+          lr_d_sum2 += lr_delta[i] * lr_delta[i];
         }
 
         avg_price = p_sum / size;
         avg_delta = d_sum / size;
         avg_vega = v_sum / size;
         avg_gamma = g_sum / size;
+        avg_lr_delta = lr_d_sum / size;
 
         err_price = sqrt((p_sum2 / size - (p_sum / size) * (p_sum / size)) / size);
         err_delta = sqrt((d_sum2 / size - (d_sum / size) * (d_sum / size)) / size);
         err_vega = sqrt((v_sum2 / size - (v_sum / size) * (v_sum / size)) / size);
         err_gamma = sqrt((g_sum2 / size - (g_sum / size) * (g_sum / size)) / size);
+        err_lr_delta = sqrt((lr_d_sum2 / size - (lr_d_sum / size) * (lr_d_sum / size)) / size);
       }
 
     __host__
       void PrintStatistics(bool print_header, const char* dev) {
         if (print_header) {
-          printf("%6s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s |\n",
-              "dev", "price", "err", "delta", "err", "vega", "err", "gamma", "err");
+          printf("%6s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s |\n",
+              "dev", "price", "err", "delta", "err", "vega", "err", "gamma", "err", "lr delta", "err");
           printf("----------------------------------------------------------------------------------------------------------------------------------------\n");
         }
-        printf("%6s | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f |\n",
-            dev, avg_price, err_price, avg_delta, err_delta, avg_vega, err_vega, avg_gamma, err_gamma);
+        printf("%6s | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f |\n",
+            dev, avg_price, err_price, avg_delta, err_delta, avg_vega, err_vega, avg_gamma, err_gamma, avg_lr_delta, err_lr_delta);
+        printf("\nVRF for delta = %13.8f\n", (err_lr_delta * err_lr_delta) / (err_delta * err_delta));
         /* printf("Average value and std of error = %13.8f %13.8f\n", */
         /*     avg_price, err_price ); */
         /* printf("Average delta and std of error = %13.8f %13.8f\n", */
