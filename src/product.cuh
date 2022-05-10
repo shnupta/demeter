@@ -7,10 +7,10 @@
 
 namespace demeter {
 
-  template <class T>
+  template <class S>
   struct Product {
-    __device__ virtual void SimulatePath(const int N, float *d_z, float *d_path) = 0;
-    __device__ virtual void CalculatePayoffs(MCResults<T> &d_results) = 0;
+    __device__ virtual void SimulatePath(const int N, float *d_z, S *d_path) = 0;
+    __device__ virtual void CalculatePayoffs(MCResults<S> &d_results) = 0;
   };
 
   template <class S>
@@ -24,26 +24,25 @@ namespace demeter {
       printf("\n=== ArithmeticAsian ===\n");
     }
 
-    /* __device__ */ 
-    /*   void SimulatePath(const int N, float *d_z, float *d_path) override { */ 
-    /*     s1 = s0; */ 
-    /*     avg_s1 = 0.0; */ 
+    __device__ 
+      void SimulatePath(const int N, float *d_z, float *d_path) override { 
+        s1 = s0; 
+        avg_s1 = 0.0; 
 
-    /*     for (int n=0; n<N; n++) { */ 
-    /*       y1   = d_z[ind]; */ 
-    /*       ind += blockDim.x;      // shift pointer to next element */ 
-    /*       z1 = y1; // store z1 for lr calculation */ 
+        for (int n=0; n<N; n++) { 
+          y1   = d_z[ind]; 
+          ind += blockDim.x;      // shift pointer to next element 
+          z1 = y1; // store z1 for lr calculation 
 
-    /*       s1 = s1 * (S(1.0) + r * dt + sigma * sqrt(dt) * y1); */ 
-    /*       avg_s1 += s1; */ 
-    /*     } */ 
-    /*     avg_s1 /= N; */ 
-    /*   } */ 
+          s1 = s1 * (S(1.0) + r * dt + sigma * sqrt(dt) * y1); 
+          avg_s1 += s1; 
+        } 
+        avg_s1 /= N; 
+      } 
 
-    // TODO: should return type S
     __device__
-      float wn(int n, float *d_path) {
-        if (n == 0) return 0.0;
+      S wn(int n, S *d_path) {
+        if (n == 0) return S(0.0);
         else return d_path[ind_zero + blockDim.x * (n-1)];
       }
 
@@ -52,41 +51,38 @@ namespace demeter {
         return dt*n;
       }
 
-    // TODO: d_path should be of type S really
-    // TODO: precompute b vector and interpolations weights
-    __device__
-      void SimulatePath(const int N, float *d_z, float *d_path) override {
-        float a, b;
-        ind_zero = ind;
-        s1 = S(0.0);
-        int h = N; // 2^m
-        int jmax = 1;
-        int m = static_cast<int>(log2f(h));
+    // TODO: Allow for averaging dates to be passed?
+    /* __device__ */
+    /*   void SimulatePath(const int N, float *d_z, S *d_path) override { */
+    /*     int i; */
+    /*     S a, b; */
+    /*     ind_zero = ind; */
+    /*     int h = N; // 2^m */
+    /*     int m = static_cast<int>(log2f(h)); */
 
-        d_path[ind_zero + blockDim.x*(h-1)] = omega * T + sigma * sqrt(T) * d_z[ind];
+    /*     d_path[ind_zero] = d_z[ind]; */
 
-        for (int k = 1; k <= m; k++) { // k = 1,...,m
-          int imin = h / 2;
-          int i = imin;
-          int l = 0, r = h;
-          for (int j = 1; j <= jmax; j++) {
-            ind += blockDim.x;      // shift pointer to next Zn
-            a = ((tn(r) - tn(i))*wn(l, d_path) + (tn(i) - tn(l))*wn(r, d_path)) / (tn(r) - tn(l));
-            b = sqrt(((tn(i) - tn(l)) * (tn(r) - tn(i))) / (tn(r) - tn(l)));
-            if (i == 1) z1 = d_z[ind];
-            d_path[ind_zero + blockDim.x * (i-1)] = a + sigma*b*d_z[ind];
-
-            i += h; l += h; r += h;
-          }
-          jmax *= 2;
-          h = imin;
-        }
-        avg_s1 = s0;
-        for (int i = 0; i < N; ++i) {
-          avg_s1 += s0 * exp(d_path[ind_zero + blockDim.x * i]);
-        }
-        avg_s1 /= N+1;
-      }
+    /*     for (int k = 1; k <= m; k++) { // k = 1,...,m */
+    /*       i = (1 << k) - 1; */
+    /*       for (int j = (1 << (k-1)) - 1; j >= 0; --j) { */
+    /*         ind += blockDim.x; */
+    /*         y1 = d_z[ind]; */
+    /*         a = S(0.5) * d_path[ind_zero + j * blockDim.x]; */
+    /*         b = sqrt(1.0 / (1 << (k+1))); */
+    /*         d_path[ind_zero + i * blockDim.x] = a - b * y1; */
+    /*         i--; */
+    /*         d_path[ind_zero + i * blockDim.x] = a + b * y1; */
+    /*         i--; */
+    /*       } */
+    /*     } */
+         
+    /*     s1 = s0; */
+    /*     for (int k = 0; k < N; ++k) { */
+    /*       s1 = s1 * (1 + r * dt + sigma * sqrt(T) * d_path[ind_zero + k * blockDim.x]); */
+    /*       avg_s1 += s1; */
+    /*     } */
+    /*     avg_s1 /= N; */
+    /*   } */
 
     __device__
       void CalculatePayoffs(MCResults<S> &d_results) override {

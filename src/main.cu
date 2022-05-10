@@ -160,13 +160,13 @@ int main(int argc, const char **argv){
   findCudaDevice(argc, argv);
     
   /* int NPATH=960000, h_N=300; */
-  int NPATH=960000;// / 16;
-  int h_N=256; // 2^8
-  /* int h_N=512; // 2^9 */
+  int NPATH = (1 << 19);
+  int h_m = 7;
+  int h_N= 1<<h_m; // 2^8
+  /* int h_m = 4; */
   /* int h_N=16; // 2^4 */
-  // TODO: Try with 16 and print first
 
-  while (NPATH <= 960000) {
+  while (NPATH <= (1 << 19)) {
 
     float h_T, h_r, h_sigma, h_dt, h_omega, h_s0, h_k;
 
@@ -182,7 +182,7 @@ int main(int argc, const char **argv){
     h_k       = 100.0f;
 
     RunAndCompareMC<ArithmeticAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma,
-        h_omega, h_s0, h_k, MCMode::QUASI);
+        h_omega, h_s0, h_k, MCMode::STANDARD);
     /* RunAndCompareMC<BinaryAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma, */
     /*     h_omega, h_s0, h_k, MCMode::QUASI); */
     /* RunAndCompareMC<Lookback<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma, */

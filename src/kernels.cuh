@@ -2,6 +2,7 @@
 
 #include <cuda.h>
 #include <helper_cuda.h>
+#include <cudaProfiler.h>
 
 #include "common.cuh"
 
@@ -35,7 +36,7 @@ namespace demeter {
     // Index into random variables
     prod.ind = threadIdx.x + N*blockIdx.x*blockDim.x;
 
-    prod.SimulatePath(N, d_z, d_paths); // TODO: Change this for memory performance
+    prod.SimulatePath(N, d_z, d_paths); 
     prod.CalculatePayoffs(d_results);
   }
 
