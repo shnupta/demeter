@@ -16,6 +16,7 @@ namespace demeter {
   template <class S>
   struct ArithmeticAsian : Product<S> {
     S s1, avg_s1, y1, psi_d, payoff, delta, vega, gamma; // CPW estimates
+    S vega_inner_sum;
     S lr_delta;
     float z1;
     int ind, ind_zero;
@@ -28,16 +29,30 @@ namespace demeter {
       void SimulatePath(const int N, float *d_z, float *d_path) override { 
         s1 = s0; 
         avg_s1 = 0.0; 
+        vega_inner_sum = 0.0;
+        y1   = d_z[ind]; 
+        z1 = y1;
+        float W1 = sqrt(dt) * y1;
+        float W_tilde = W1;
+        S s_tilde = s0 * exp(omega * sqrt(dt - dt) + sigma * (W_tilde - W1));
+        s1 = s0 * exp(omega * dt + sigma * W1);
+        avg_s1 += s1;
+        vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
 
-        for (int n=0; n<N; n++) { 
-          y1   = d_z[ind]; 
+        for (int n=1; n<N; n++) { 
           ind += blockDim.x;      // shift pointer to next element 
-          z1 = y1; // store z1 for lr calculation 
+          y1   = d_z[ind]; 
+          /* if (n == 0) z1 = y1; */
+          W_tilde = W_tilde + sqrt(dt) * y1;
+          s_tilde = s0 * exp(omega * (dt*n - dt) + sigma * (W_tilde - W1));
+          vega_inner_sum += s_tilde * (W_tilde - W1 - sigma * (dt*n - dt));
 
-          s1 = s1 * (S(1.0) + r * dt + sigma * sqrt(dt) * y1); 
+          /* s1 = s1 * (S(1.0) + r * dt + sigma * sqrt(dt) * y1); */ 
+          s1 = s_tilde * exp(omega * dt + sigma * W1); 
           avg_s1 += s1; 
         } 
         avg_s1 /= N; 
+        vega_inner_sum /= N;
       } 
 
     __device__
@@ -92,14 +107,14 @@ namespace demeter {
         delta = exp(r * (dt - T)) * (avg_s1 / s0) 
           * (S(1.0) - normcdf(psi_d - sigma * sqrt(dt)));
         // TODO: Calculate vega
-        vega = S(0.0);
+        vega = exp(r * (dt - T)) * (1 - normcdf(psi_d - sigma*sqrt(dt))) * vega_inner_sum + k * exp(-r * T) * NormPDF(psi_d) * sqrt(dt);
         gamma = ((k * exp(-r * T)) / (s0 * s0 * sigma * sqrt(dt)))
           * NormPDF(psi_d);
         lr_delta = payoff * (z1 / (s0 * sigma * sqrt(dt)));
 
         d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
         d_results.delta[threadIdx.x + blockIdx.x*blockDim.x] = delta;
-        /* d_results.vega[threadIdx.x + blockIdx.x*blockDim.x] = vega; */
+        d_results.vega[threadIdx.x + blockIdx.x*blockDim.x] = vega;
         d_results.gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
         d_results.lr_delta[threadIdx.x + blockIdx.x*blockDim.x] = lr_delta;
       }
@@ -110,14 +125,14 @@ namespace demeter {
         ind = 0;
         for (int i = 0; i < NPATHS; ++i) {
           s1 = s0;
-          avg_s1 = s0;
+          avg_s1 = 0.0;
           for (int n=0; n<N; n++) {
             y1   = z[ind];
             ind++;
             s1 = s1 * (S(1.0) + r * dt + sigma * sqrt(dt) * y1);
             avg_s1 += s1;
           }
-          avg_s1 /= N+1;
+          avg_s1 /= N;
           psi_d = (log(k) - log(avg_s1) - omega * dt) / (sigma * sqrt(dt));
 
           payoff = exp(-r * T) * max(avg_s1 - k, S(0.0));
