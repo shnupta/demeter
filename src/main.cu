@@ -41,7 +41,7 @@ void RunAndCompareMC(int npath, int timesteps, float h_T, float h_dt, float h_r,
   S h_prod;
   h_prod.PrintName();
 
-  float *d_z, *d_temp_z, *d_paths;
+  float *d_z, *d_temp_z;
   MCResults<float> h_results, d_results;
   Timer timer;
 
@@ -64,8 +64,6 @@ void RunAndCompareMC(int npath, int timesteps, float h_T, float h_dt, float h_r,
   checkCudaErrors(cudaMalloc((void **)&d_z, sizeof(float) * timesteps * npath));
   checkCudaErrors(cudaMalloc((void **)&d_temp_z,
         sizeof(float) * timesteps * npath));
-  checkCudaErrors(cudaMalloc((void **) &d_paths,
-      sizeof(float) * timesteps * npath));
 
   timer.StartDeviceTimer();
 
@@ -92,7 +90,7 @@ void RunAndCompareMC(int npath, int timesteps, float h_T, float h_dt, float h_r,
 
   timer.StartDeviceTimer();
 
-  MCSimulation<S> <<<npath/64, 64>>>(d_z, d_paths, d_results);
+  MCSimulation<S> <<<npath/64, 64>>>(d_z, d_results);
   getLastCudaError("MCSimulation execution failed\n");
 
   timer.StopDeviceTimer();
@@ -159,12 +157,9 @@ int main(int argc, const char **argv){
   // initialise card
   findCudaDevice(argc, argv);
     
-  /* int NPATH=960000, h_N=300; */
   int NPATH = (1 << 19);
   int h_m = 7;
-  int h_N= 1<<h_m; // 2^8
-  /* int h_m = 4; */
-  /* int h_N=16; // 2^4 */
+  int h_N= 1 << h_m; // 2^8
 
   while (NPATH <= (1 << 19)) {
 
@@ -181,14 +176,12 @@ int main(int argc, const char **argv){
     h_s0      = 100.0f;
     h_k       = 100.0f;
 
-    /* RunAndCompareMC<ArithmeticAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma, */
-    /*     h_omega, h_s0, h_k, MCMode::STANDARD); */
     RunAndCompareMC<ArithmeticAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma,
         h_omega, h_s0, h_k, MCMode::STANDARD);
-    /* RunAndCompareMC<BinaryAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma, */
-    /*     h_omega, h_s0, h_k, MCMode::QUASI); */
-    /* RunAndCompareMC<Lookback<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma, */
-    /*     h_omega, h_s0, h_k, MCMode::QUASI); */
+    RunAndCompareMC<BinaryAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma,
+        h_omega, h_s0, h_k, MCMode::STANDARD);
+    RunAndCompareMC<Lookback<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma,
+        h_omega, h_s0, h_k, MCMode::STANDARD);
 
     printf("\n\n\n");
 

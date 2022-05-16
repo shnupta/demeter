@@ -31,12 +31,12 @@ namespace demeter {
   /* Main Monte Carlo simulation */
   template <class T>
   __global__ 
-  void MCSimulation(float *d_z, float *d_paths, MCResults<float> d_results) {
+  void MCSimulation(float *d_z, MCResults<float> d_results) {
     T prod;
     // Index into random variables
     prod.ind = threadIdx.x + N*blockIdx.x*blockDim.x;
 
-    prod.SimulatePath(N, d_z, d_paths); 
+    prod.SimulatePath(N, d_z); 
     prod.CalculatePayoffs(d_results);
   }
 
