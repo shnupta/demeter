@@ -17,7 +17,7 @@ namespace demeter {
   struct ArithmeticAsian : Product<S> {
     S s1, s_tilde, avg_s1, psi_d, payoff, delta, vega, gamma; // CPW estimates
     S vega_inner_sum;
-    S lr_delta;
+    S lr_delta, lr_vega, lr_gamma;
     float z1, z, W1, W_tilde;
     int ind;
 
@@ -40,6 +40,7 @@ namespace demeter {
         // Set initial values required for greek estimates
         avg_s1 = s1;
         vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+        lr_vega = ((z*z - 1) / sigma) - (z * sqrt(dt));
 
         // Simulate over rest of N timesteps
         for (int n = 1; n < N; n++) { 
@@ -53,6 +54,7 @@ namespace demeter {
 
           // Required for greek estimations
           vega_inner_sum += s_tilde * (W_tilde - W1 - sigma * (dt*n - dt));
+          lr_vega += ((z*z - 1) / sigma) - (z * sqrt(dt));
           avg_s1 += s1; 
         } 
         avg_s1 /= N; 
@@ -78,8 +80,11 @@ namespace demeter {
         gamma = ((k * exp(-r * T)) / (s0 * s0 * sigma * sqrt(dt)))
           * NormPDF(psi_d);
 
-        // Likelihood ratio Delta
+        // Likelihood ratio
         lr_delta = payoff * (z1 / (s0 * sigma * sqrt(dt)));
+        lr_vega = payoff * lr_vega;
+        lr_gamma = payoff * (((z1*z1 - 1) / (s0 * s0 * sigma * sigma * dt)) - 
+          (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
         // Store results in respective arrays
         d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
@@ -87,6 +92,8 @@ namespace demeter {
         d_results.vega[threadIdx.x + blockIdx.x*blockDim.x] = vega;
         d_results.gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
         d_results.lr_delta[threadIdx.x + blockIdx.x*blockDim.x] = lr_delta;
+        d_results.lr_vega[threadIdx.x + blockIdx.x*blockDim.x] = lr_vega;
+        d_results.lr_gamma[threadIdx.x + blockIdx.x*blockDim.x] = lr_gamma;
       }
 
     __host__
@@ -108,6 +115,7 @@ namespace demeter {
           // Set initial values required for greek estimates
           avg_s1 = s1;
           vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+          lr_vega = ((z*z - 1) / sigma) - (z * sqrt(dt));
 
           // Simulate over rest of N timesteps
           for (int n = 1; n < N; n++) { 
@@ -121,6 +129,7 @@ namespace demeter {
 
             // Required for greek estimations
             vega_inner_sum += s_tilde * (W_tilde - W1 - sigma * (dt*n - dt));
+            lr_vega += ((z*z - 1) / sigma) - (z * sqrt(dt));
             avg_s1 += s1; 
           } 
           avg_s1 /= N; 
@@ -140,11 +149,17 @@ namespace demeter {
             * NormPDF(psi_d);
 
           lr_delta = payoff * (z1 / (s0 * sigma * sqrt(dt)));
+          lr_vega = payoff * lr_vega;
+          lr_gamma = payoff * (((z1*z1 - 1) / (s0 * s0 * sigma * sigma * dt)) - 
+            (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
           results.price[i] = payoff;
           results.delta[i] = delta;
           results.vega[i] = vega;
           results.gamma[i] = gamma;
+          results.lr_delta[i] = lr_delta;
+          results.lr_vega[i] = lr_vega;
+          results.lr_gamma[i] = lr_gamma;
         }
       }
   };
@@ -153,7 +168,7 @@ namespace demeter {
   struct BinaryAsian : Product<S> {
     S s1, s_tilde, avg_s1, psi_d, payoff, delta, vega, gamma;  
     S vega_inner_sum;
-    S lr_delta;
+    S lr_delta, lr_vega, lr_gamma;
     float z, z1, W1, W_tilde;
     int ind;
     
@@ -177,7 +192,8 @@ namespace demeter {
         // Set initial values required for greek estimates
         avg_s1 = s1;
         vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
-        
+        lr_vega = ((z*z - 1) / sigma) - (z * sqrt(dt));
+
         // Simulate over rest of N timesteps
         for (int n = 1; n < N; n++) { 
           ind += blockDim.x;      // shift pointer to random variable
@@ -190,6 +206,7 @@ namespace demeter {
 
           // Required for greek estimations
           vega_inner_sum += s_tilde * (W_tilde - W1 - sigma * (dt*n - dt));
+          lr_vega += ((z*z - 1) / sigma) - (z * sqrt(dt));
           avg_s1 += s1; 
         } 
         avg_s1 /= N; 
@@ -215,8 +232,11 @@ namespace demeter {
         gamma = (exp(-r * T) / (s0 * s0 * sigma * sqrt(dt))) * NormPDF(psi_d)
           * ((psi_d / (sigma * sqrt(dt)) - S(1.0)));
 
-        // LR Delta
+        // LR
         lr_delta = payoff * (z1 / (s0 * sigma * sqrt(dt)));
+        lr_vega = payoff * lr_vega;
+        lr_gamma = payoff * (((z1*z1 - 1) / (s0 * s0 * sigma * sigma * dt)) - 
+          (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
         // Store results
         d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
@@ -224,6 +244,8 @@ namespace demeter {
         d_results.vega[threadIdx.x + blockIdx.x*blockDim.x] = vega;
         d_results.gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
         d_results.lr_delta[threadIdx.x + blockIdx.x*blockDim.x] = lr_delta;
+        d_results.lr_vega[threadIdx.x + blockIdx.x*blockDim.x] = lr_vega;
+        d_results.lr_gamma[threadIdx.x + blockIdx.x*blockDim.x] = lr_gamma;
       }
 
     __host__
@@ -245,6 +267,7 @@ namespace demeter {
           // Set initial values required for greek estimates
           avg_s1 = s1;
           vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+          lr_vega = ((z*z - 1) / sigma) - (z * sqrt(dt));
           
           // Simulate over rest of N timesteps
           for (int n = 1; n < N; n++) { 
@@ -258,6 +281,7 @@ namespace demeter {
 
             // Required for greek estimations
             vega_inner_sum += s_tilde * (W_tilde - W1 - sigma * (dt*n - dt));
+            lr_vega += ((z*z - 1) / sigma) - (z * sqrt(dt));
             avg_s1 += s1; 
           } 
           avg_s1 /= N; 
@@ -277,12 +301,17 @@ namespace demeter {
           * ((psi_d / (sigma * sqrt(dt)) - S(1.0)));
 
           lr_delta = payoff * (z1 / (s0 * sigma * sqrt(dt)));
+          lr_vega = payoff * lr_vega;
+          lr_gamma = payoff * (((z1*z1 - 1) / (s0 * s0 * sigma * sigma * dt)) - 
+            (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
           results.price[i] = payoff;
           results.delta[i] = delta;
           results.vega[i] = vega;
           results.gamma[i] = gamma;
           results.lr_delta[i] = lr_delta;
+          results.lr_vega[i] = lr_vega;
+          results.lr_gamma[i] = lr_gamma;
         }
       }
   };
@@ -291,7 +320,7 @@ namespace demeter {
   struct Lookback : Product<S> {
     S s1, s_tilde, s_max, psi_d, payoff, delta, vega, gamma;  
     S vega_inner_sum;
-    S lr_delta;
+    S lr_delta, lr_vega, lr_gamma;
     float z, z1, W1, W_tilde;
     int ind;
 
@@ -313,6 +342,7 @@ namespace demeter {
         
         // Set initial values required for greek estimates
         vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+        lr_vega = ((z*z - 1) / sigma) - (z * sqrt(dt));
         s_max = s1;
 
         for (int n=1; n<N; n++) {
@@ -329,6 +359,7 @@ namespace demeter {
             s_max = s1;
             vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt*n - dt));
           } 
+          lr_vega += ((z*z - 1) / sigma) - (z * sqrt(dt));
         }
       }
 
@@ -351,8 +382,11 @@ namespace demeter {
         gamma = ((k * exp(-r * T)) / (s0 * s0 * sigma * sqrt(dt)))
           * NormPDF(psi_d);
 
-        // LR Delta
+        // LR
         lr_delta = payoff * (z1 / (s0 * sigma * sqrt(dt)));
+        lr_vega = payoff * lr_vega;
+        lr_gamma = payoff * (((z1*z1 - 1) / (s0 * s0 * sigma * sigma * dt)) - 
+          (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
         // Store results
         d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
@@ -360,6 +394,8 @@ namespace demeter {
         d_results.vega[threadIdx.x + blockIdx.x*blockDim.x] = vega;
         d_results.gamma[threadIdx.x + blockIdx.x*blockDim.x] = gamma;
         d_results.lr_delta[threadIdx.x + blockIdx.x*blockDim.x] = lr_delta;
+        d_results.lr_vega[threadIdx.x + blockIdx.x*blockDim.x] = lr_vega;
+        d_results.lr_gamma[threadIdx.x + blockIdx.x*blockDim.x] = lr_gamma;
       }
 
     __host__
@@ -379,6 +415,7 @@ namespace demeter {
           
           // Set initial values required for greek estimates
           vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+          lr_vega = ((z*z - 1) / sigma) - (z * sqrt(dt));
           s_max = s1;
 
           for (int n=0; n<N; n++) {
@@ -395,6 +432,7 @@ namespace demeter {
               s_max = s1;
               vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt*n - dt)); 
             } 
+            lr_vega += ((z*z - 1) / sigma) - (z * sqrt(dt));
           }
 
           psi_d = (log(k) - log(s_max) - omega * dt) / (sigma * sqrt(dt));
@@ -411,12 +449,17 @@ namespace demeter {
             * NormPDF(psi_d);
 
           lr_delta = payoff * (z1 / (s0 * sigma * sqrt(dt)));
+          lr_vega = payoff * lr_vega;
+          lr_gamma = payoff * (((z1*z1 - 1) / (s0 * s0 * sigma * sigma * dt)) - 
+            (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
           results.price[i] = payoff;
           results.delta[i] = delta;
           results.vega[i] = vega;
           results.gamma[i] = gamma;
           results.lr_delta[i] = lr_delta;
+          results.lr_vega[i] = lr_vega;
+          results.lr_gamma[i] = lr_gamma;
         }
       }
   };
