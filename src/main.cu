@@ -23,9 +23,19 @@ using namespace demeter;
 // Main program
 ////////////////////////////////////////////////////////////////////////
 
+enum MCMode {
+  STANDARD, QUASI
+};
+
 template <typename S>
 void RunAndCompareMC(int npath, int timesteps, float h_T, float h_dt, float h_r,
-    float h_sigma, float h_omega, float h_s0, float h_k) {
+    float h_sigma, float h_omega, float h_s0, float h_k, MCMode mode) {
+
+  if (mode == MCMode::QUASI) {
+    printf("Mode = QUASI\n");
+  } else if (mode == MCMode::STANDARD) {
+    printf("Mode = STANDARD\n");
+  }
 
   // Initalise host product and print name
   S h_prod;
@@ -58,21 +68,23 @@ void RunAndCompareMC(int npath, int timesteps, float h_T, float h_dt, float h_r,
   timer.StartDeviceTimer();
 
   curandGenerator_t gen;
-  /* checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT) ); */
-  /* checkCudaErrors( curandSetPseudoRandomGeneratorSeed(gen, 1234ULL) ); */
-  /* checkCudaErrors( curandGenerateNormal(gen, d_z, h_N*NPATH, 0.0f, 1.0f) ); */
-  checkCudaErrors(curandCreateGenerator(&gen, CURAND_RNG_QUASI_SCRAMBLED_SOBOL32));
-  checkCudaErrors(curandSetQuasiRandomGeneratorDimensions(gen, timesteps));
-  checkCudaErrors(curandGenerateNormal(gen, d_temp_z, timesteps*npath, 0.0f, 1.0f));
+  if (mode == MCMode::STANDARD) {
+    checkCudaErrors( curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT) );
+    checkCudaErrors( curandSetPseudoRandomGeneratorSeed(gen, 1234ULL) );
+    checkCudaErrors( curandGenerateNormal(gen, d_z, timesteps * npath, 0.0f, 1.0f) );
+  } else if (mode == MCMode::QUASI) {
+    checkCudaErrors(curandCreateGenerator(&gen, CURAND_RNG_QUASI_SCRAMBLED_SOBOL32));
+    checkCudaErrors(curandSetQuasiRandomGeneratorDimensions(gen, timesteps));
+    checkCudaErrors(curandGenerateNormal(gen, d_temp_z, timesteps*npath, 0.0f, 1.0f));
+    // Transform ordering of random variables into one that maximises memory
+    // locality when threads access for path simulation
+    TransformSobol<<<npath/64, 64>>>(d_z, d_temp_z);
+  }
 
   timer.StopDeviceTimer();
 
   printf("CURAND normal RNG  execution time (ms): %f,  samples/sec: %e \n\n",
           timer.GetDeviceElapsedTime(), timesteps*npath/(0.001*timer.GetDeviceElapsedTime()));
-
-  // Transform ordering of random variables into one that maximises memory
-  // locality when threads access for path simulation
-  TransformSobol<<<npath/64, 64>>>(d_z, d_temp_z);
 
   // Execute kernel and time it
 
@@ -95,17 +107,21 @@ void RunAndCompareMC(int npath, int timesteps, float h_T, float h_dt, float h_r,
   // Copy random variables
   float *h_z = (float *) malloc(sizeof(float) * timesteps * npath);
   float *h_temp_z = (float *) malloc(sizeof(float) * timesteps * npath);
-  checkCudaErrors( cudaMemcpy(h_temp_z, d_temp_z, sizeof(float) * timesteps * npath, cudaMemcpyDeviceToHost) );
+  if (mode == MCMode::QUASI) {
+    checkCudaErrors( cudaMemcpy(h_temp_z, d_temp_z, sizeof(float) * timesteps * npath, cudaMemcpyDeviceToHost) );
 
-  // Rejig for sobol dimensions
-  int i = 0, j = 0;
-  while (i < npath) {
-    while (j < timesteps) {
-      h_z[i * timesteps + j] = h_temp_z[i + j * npath];
-      j++;
+    // Rejig for sobol dimensions
+    int i = 0, j = 0;
+    while (i < npath) {
+      while (j < timesteps) {
+        h_z[i * timesteps + j] = h_temp_z[i + j * npath];
+        j++;
+      }
+      i++;
+      j = 0;
     }
-    i++;
-    j = 0;
+  } else if (mode == MCMode::STANDARD) {
+    checkCudaErrors( cudaMemcpy(h_z, d_z, sizeof(float) * timesteps * npath, cudaMemcpyDeviceToHost) );
   }
 
 
@@ -141,10 +157,11 @@ int main(int argc, const char **argv){
   // initialise card
   findCudaDevice(argc, argv);
     
-  /* int NPATH=960000, h_N=300; */
-  int NPATH=960000 / 16, h_N=300;
+  int NPATH = (1 << 19);
+  int h_m = 7;
+  int h_N= 1 << h_m; // 2^8
 
-  while (NPATH <= 960001) {
+  while (NPATH <= (1 << 19)) {
 
     float h_T, h_r, h_sigma, h_dt, h_omega, h_s0, h_k;
 
@@ -160,15 +177,15 @@ int main(int argc, const char **argv){
     h_k       = 100.0f;
 
     RunAndCompareMC<ArithmeticAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma,
-        h_omega, h_s0, h_k);
+        h_omega, h_s0, h_k, MCMode::STANDARD);
     RunAndCompareMC<BinaryAsian<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma,
-        h_omega, h_s0, h_k);
+        h_omega, h_s0, h_k, MCMode::STANDARD);
     RunAndCompareMC<Lookback<float>>(NPATH, h_N, h_T, h_dt, h_r, h_sigma,
-        h_omega, h_s0, h_k);
+        h_omega, h_s0, h_k, MCMode::STANDARD);
 
     printf("\n\n\n");
 
-    NPATH <<= 2;
+    NPATH <<= 1;
 
   }
 

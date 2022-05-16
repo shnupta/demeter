@@ -2,6 +2,7 @@
 
 #include <cuda.h>
 #include <helper_cuda.h>
+#include <cudaProfiler.h>
 
 #include "common.cuh"
 
@@ -20,13 +21,7 @@ namespace demeter {
     int desired_idx = threadIdx.x + N * blockIdx.x * blockDim.x;
     int temp_idx = threadIdx.x + blockIdx.x * blockDim.x;
 
-    // TODO: Check for some other desired indices that it transfers correctly
-    bool print = false; // desired_idx == N * 1 * blockDim.x;
-
     for (int n = 0; n < N; n++) {
-      if (print) printf("Moving from index %d (dim %d) to %d (block %d dim %d)\n",
-          temp_idx, temp_idx / PATHS, desired_idx, desired_idx / (N * blockDim.x), (desired_idx / blockDim.x) % N);
-
       d_z[desired_idx] = temp_z[temp_idx];
       desired_idx += blockDim.x;
       temp_idx += PATHS;
@@ -41,7 +36,7 @@ namespace demeter {
     // Index into random variables
     prod.ind = threadIdx.x + N*blockIdx.x*blockDim.x;
 
-    prod.SimulatePath(N, d_z);
+    prod.SimulatePath(N, d_z); 
     prod.CalculatePayoffs(d_results);
   }
 
