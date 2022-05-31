@@ -10,7 +10,8 @@ namespace demeter {
   template <class S>
   struct Product {
     __device__ virtual void SimulatePath(const int N, float *d_z) = 0;
-    __device__ virtual void CalculatePayoffs(MCResults<S> &d_results) = 0;
+    __device__ virtual void CalculatePayoffs(MCResults<double> &d_results,
+        bool av) = 0;
   };
 
   template <class S>
@@ -21,7 +22,7 @@ namespace demeter {
     S vega_inner_sum, av_vega_inner_sum;
     S lr_delta, lr_vega, lr_gamma;
     float z1, av_z1, z, av_z, W1, av_W1, W_tilde, av_W_tilde;
-    int ind;
+    int ind, ind_zero;
 
     void PrintName() {
       printf("\n=== ArithmeticAsian ===\n");
@@ -81,8 +82,64 @@ namespace demeter {
         av_vega_inner_sum /= N;
       } 
 
+		__device__
+      S wn(int n, S *d_path) {
+        if (n == 0) return S(0.0);
+        else return d_path[ind_zero + blockDim.x * (n-1)];
+      }
+
     __device__
-      void CalculatePayoffs(MCResults<S> &d_results) override {
+      float tn(int n) {
+        return dt*n;
+      }
+
+    __device__
+      void SimulatePathQuasiBB(const int N, float *d_z, S *d_path) {
+        int i;
+        S a, b;
+        ind_zero = ind;
+        int h = N; // 2^m
+        int m = static_cast<int>(log2f(h));
+
+        d_path[ind_zero] = d_z[ind];
+
+        for (int k = 1; k <= m; k++) { // k = 1,...,m
+          i = (1 << k) - 1;
+          for (int j = (1 << (k-1)) - 1; j >= 0; --j) {
+            ind += blockDim.x;
+            z = d_z[ind];
+            a = S(0.5) * d_path[ind_zero + j * blockDim.x];
+            b = sqrt(1.0 / (1 << (k+1)));
+            d_path[ind_zero + i * blockDim.x] = a - b * z;
+            i--;
+            d_path[ind_zero + i * blockDim.x] = a + b * z;
+            i--;
+          }
+        }
+         
+        W1 = d_path[ind_zero];
+        W_tilde = W1;
+
+        s_tilde = s0 * exp(omega * sqrt(dt - dt) + sigma * (W_tilde - W1));
+        s1 = s0 * exp(omega * dt + sigma * W1);
+
+        vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+        avg_s1 = s1;
+
+        for (int k = 1; k < N; ++k) {
+          W_tilde = W_tilde + d_path[ind_zero + k * blockDim.x];
+          s_tilde = s0 * exp(omega * (dt*k - dt) + sigma * (W_tilde - W1));
+          s1 = s_tilde * exp(omega * dt + sigma * W1); 
+
+          vega_inner_sum += s_tilde * (W_tilde - W1 - sigma * (dt*k - dt));
+          avg_s1 += s1;
+        }
+        avg_s1 /= N;
+        vega_inner_sum /= N;
+      }
+
+    __device__
+      void CalculatePayoffs(MCResults<double> &d_results, bool av) override {
         psi_d = (log(k) - log(avg_s1) - omega * dt) / (sigma * sqrt(dt));
         av_psi_d = (log(k) - log(av_avg_s1) - omega * dt) / (sigma * sqrt(dt));
 
@@ -115,12 +172,12 @@ namespace demeter {
           (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
         // Antithetic averages
-        payoff = 0.5 * (payoff + av_payoff);
-        delta = 0.5 * (delta + av_delta);
-        vega = 0.5 * (vega + av_vega);
-        gamma = 0.5 * (gamma + av_gamma);
-
-        // TODO: Might have to calculate the variances of the estimates differently
+        if (av) {
+          payoff = 0.5 * (payoff + av_payoff);
+          delta = 0.5 * (delta + av_delta);
+          vega = 0.5 * (vega + av_vega);
+          gamma = 0.5 * (gamma + av_gamma);
+        }
 
         // Store results in respective arrays
         d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
@@ -134,7 +191,7 @@ namespace demeter {
 
     __host__
       void HostMC(const int NPATHS, const int N, float *h_z, float r, float dt,
-          float sigma, S s0, S k, float T, float omega, MCResults<S> &results) {
+          float sigma, S s0, S k, float T, float omega, MCResults<double> &results) {
         ind = 0;
 
         for (int i = 0; i < NPATHS; ++i) {
@@ -208,7 +265,7 @@ namespace demeter {
     S vega_inner_sum, av_vega_inner_sum;
     S lr_delta, lr_vega, lr_gamma;
     float z, z1, W1, W_tilde, av_z, av_z1, av_W1, av_W_tilde;
-    int ind;
+    int ind, ind_zero;
     
 
     void PrintName() {
@@ -268,8 +325,64 @@ namespace demeter {
         av_vega_inner_sum /= N;
       }
 
+		__device__
+      S wn(int n, S *d_path) {
+        if (n == 0) return S(0.0);
+        else return d_path[ind_zero + blockDim.x * (n-1)];
+      }
+
     __device__
-      void CalculatePayoffs(MCResults<S> &d_results) override {
+      float tn(int n) {
+        return dt*n;
+      }
+
+    __device__
+      void SimulatePathQuasiBB(const int N, float *d_z, S *d_path) {
+        int i;
+        S a, b;
+        ind_zero = ind;
+        int h = N; // 2^m
+        int m = static_cast<int>(log2f(h));
+
+        d_path[ind_zero] = d_z[ind];
+
+        for (int k = 1; k <= m; k++) { // k = 1,...,m
+          i = (1 << k) - 1;
+          for (int j = (1 << (k-1)) - 1; j >= 0; --j) {
+            ind += blockDim.x;
+            z = d_z[ind];
+            a = S(0.5) * d_path[ind_zero + j * blockDim.x];
+            b = sqrt(1.0 / (1 << (k+1)));
+            d_path[ind_zero + i * blockDim.x] = a - b * z;
+            i--;
+            d_path[ind_zero + i * blockDim.x] = a + b * z;
+            i--;
+          }
+        }
+         
+        W1 = d_path[ind_zero];
+        W_tilde = W1;
+
+        s_tilde = s0 * exp(omega * sqrt(dt - dt) + sigma * (W_tilde - W1));
+        s1 = s0 * exp(omega * dt + sigma * W1);
+
+        vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+        avg_s1 = s1;
+
+        for (int k = 1; k < N; ++k) {
+          W_tilde = W_tilde + d_path[ind_zero + k * blockDim.x];
+          s_tilde = s0 * exp(omega * (dt*k - dt) + sigma * (W_tilde - W1));
+          s1 = s_tilde * exp(omega * dt + sigma * W1); 
+
+          vega_inner_sum += s_tilde * (W_tilde - W1 - sigma * (dt*k - dt));
+          avg_s1 += s1;
+        }
+        avg_s1 /= N;
+        vega_inner_sum /= N;
+      }
+
+    __device__
+      void CalculatePayoffs(MCResults<double> &d_results, bool av) override {
         psi_d = (log(k) - log(avg_s1) - omega * dt) / (sigma * sqrt(dt));
         av_psi_d = (log(k) - log(av_avg_s1) - omega * dt) / (sigma * sqrt(dt));
 
@@ -302,10 +415,12 @@ namespace demeter {
           (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
         // Antithetic averages
-        payoff = 0.5 * (payoff + av_payoff);
-        delta = 0.5 * (delta + av_delta);
-        vega = 0.5 * (vega + av_vega);
-        gamma = 0.5 * (gamma + av_gamma);
+        if (av) {
+          payoff = 0.5 * (payoff + av_payoff);
+          delta = 0.5 * (delta + av_delta);
+          vega = 0.5 * (vega + av_vega);
+          gamma = 0.5 * (gamma + av_gamma);
+        }
 
         // Store results
         d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
@@ -319,7 +434,7 @@ namespace demeter {
 
     __host__
       void HostMC(const int NPATHS, const int N, float *h_z, float r, float dt,
-          float sigma, S s0, S k, float T, float omega, MCResults<S> &results) {
+          float sigma, S s0, S k, float T, float omega, MCResults<double> &results) {
         ind = 0;
 
         for (int i = 0; i < NPATHS; ++i) {
@@ -393,7 +508,7 @@ namespace demeter {
     S vega_inner_sum, av_vega_inner_sum;
     S lr_delta, lr_vega, lr_gamma;
     float z, z1, W1, W_tilde, av_z, av_z1, av_W1, av_W_tilde;
-    int ind;
+    int ind, ind_zero;
 
     void PrintName() {
       printf("\n=== Lookback ===\n");
@@ -452,8 +567,64 @@ namespace demeter {
         }
       }
 
+		__device__
+      S wn(int n, S *d_path) {
+        if (n == 0) return S(0.0);
+        else return d_path[ind_zero + blockDim.x * (n-1)];
+      }
+
     __device__
-      void CalculatePayoffs(MCResults<S> &d_results) override {
+      float tn(int n) {
+        return dt*n;
+      }
+
+    __device__
+      void SimulatePathQuasiBB(const int N, float *d_z, S *d_path) {
+        int i;
+        S a, b;
+        ind_zero = ind;
+        int h = N; // 2^m
+        int m = static_cast<int>(log2f(h));
+
+        d_path[ind_zero] = d_z[ind];
+
+        for (int k = 1; k <= m; k++) { // k = 1,...,m
+          i = (1 << k) - 1;
+          for (int j = (1 << (k-1)) - 1; j >= 0; --j) {
+            ind += blockDim.x;
+            z = d_z[ind];
+            a = S(0.5) * d_path[ind_zero + j * blockDim.x];
+            b = sqrt(1.0 / (1 << (k+1)));
+            d_path[ind_zero + i * blockDim.x] = a - b * z;
+            i--;
+            d_path[ind_zero + i * blockDim.x] = a + b * z;
+            i--;
+          }
+        }
+         
+        W1 = d_path[ind_zero];
+        W_tilde = W1;
+
+        s_tilde = s0 * exp(omega * sqrt(dt - dt) + sigma * (W_tilde - W1));
+        s1 = s0 * exp(omega * dt + sigma * W1);
+
+        vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt - dt));
+        s_max = s1;
+
+        for (int k = 1; k < N; ++k) {
+          W_tilde = W_tilde + d_path[ind_zero + k * blockDim.x];
+          s_tilde = s0 * exp(omega * (dt*k - dt) + sigma * (W_tilde - W1));
+          s1 = s_tilde * exp(omega * dt + sigma * W1); 
+
+          if (s1 > s_max) {
+            s_max = s1;
+            vega_inner_sum = s_tilde * (W_tilde - W1 - sigma * (dt*k - dt));
+          }
+        }
+      }
+
+    __device__
+      void CalculatePayoffs(MCResults<double> &d_results, bool av) override {
         psi_d = (log(k) - log(s_max) - omega * dt) / (sigma * sqrt(dt));
         av_psi_d = (log(k) - log(av_s_max) - omega * dt) / (sigma * sqrt(dt));
 
@@ -485,11 +656,13 @@ namespace demeter {
         lr_gamma = payoff * (((z1*z1 - S(1.0)) / (s0 * s0 * sigma * sigma * dt)) - 
           (z1 / (s0 * s0 * sigma * sqrt(dt))));
 
-        // Antithetic averages
-        payoff = 0.5 * (payoff + av_payoff);
-        delta = 0.5 * (delta + av_delta);
-        vega = 0.5 * (vega + av_vega);
-        gamma = 0.5 * (gamma + av_gamma);
+        // Antithetic averages 
+        if (av) {
+          payoff = 0.5 * (payoff + av_payoff);
+          delta = 0.5 * (delta + av_delta);
+          vega = 0.5 * (vega + av_vega);
+          gamma = 0.5 * (gamma + av_gamma);
+        }
 
         // Store results
         d_results.price[threadIdx.x + blockIdx.x*blockDim.x] = payoff;
@@ -503,7 +676,7 @@ namespace demeter {
 
     __host__
       void HostMC(const int NPATHS, const int N, float *h_z, float r, float dt,
-          float sigma, S s0, S k, float T, float omega, MCResults<S> &results) {
+          float sigma, S s0, S k, float T, float omega, MCResults<double> &results) {
         ind = 0;
         for (int i = 0; i < NPATHS; ++i) {
           // Initial setup
