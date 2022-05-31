@@ -2,9 +2,19 @@
 
 namespace demeter {
 
+  enum MCMode {
+    STANDARD, STANDARD_AV, QUASI, QUASI_BB
+  };
+
   /* Device contants */
   __constant__ int   N, PATHS;
   __constant__ float T, r, sigma, dt, omega, s0, k;
+
+  template <class T>
+  struct LRResults {
+    T delta = 0, vega = 0, gamma = 0;
+    T err_delta = 0, err_vega = 0, err_gamma = 0; 
+  };
 
   /* Struct to be passed to the MC method to store calculated values */
   template <class T>
@@ -15,6 +25,36 @@ namespace demeter {
     double err_price = 0.0, err_delta = 0.0, err_vega = 0.0, err_gamma = 0.0;
     double avg_lr_delta = 0.0, avg_lr_vega = 0.0, avg_lr_gamma = 0.0;
     double err_lr_delta = 0.0, err_lr_vega = 0.0, err_lr_gamma = 0.0;
+
+    __host__
+      void ClearHost(const int size) {
+        /* memset(price, 0, sizeof(T) * size); */
+        /* memset(delta, 0, sizeof(T) * size); */
+        /* memset(vega, 0, sizeof(T) * size); */
+        /* memset(gamma, 0, sizeof(T) * size); */
+        /* memset(lr_delta, 0, sizeof(T) * size); */
+        /* memset(lr_vega, 0, sizeof(T) * size); */
+        /* memset(lr_gamma, 0, sizeof(T) * size); */
+        avg_price = 0.0; avg_delta = 0.0; avg_vega = 0.0; avg_gamma = 0.0;
+        err_price = 0.0; err_delta = 0.0; err_vega = 0.0; err_gamma = 0.0;
+        avg_lr_delta = 0.0; avg_lr_vega = 0.0; avg_lr_gamma = 0.0;
+        err_lr_delta = 0.0; err_lr_vega = 0.0; err_lr_gamma = 0.0;
+      }
+
+    __host__
+      void ClearDevice(const int size) {
+        /* cudaMemset(price, 0, sizeof(T) * size); */
+        /* cudaMemset(delta, 0, sizeof(T) * size); */
+        /* cudaMemset(vega, 0, sizeof(T) * size); */
+        /* cudaMemset(gamma, 0, sizeof(T) * size); */
+        /* cudaMemset(lr_delta, 0, sizeof(T) * size); */
+        /* cudaMemset(lr_vega, 0, sizeof(T) * size); */
+        /* cudaMemset(lr_gamma, 0, sizeof(T) * size); */
+        avg_price = 0.0; avg_delta = 0.0; avg_vega = 0.0; avg_gamma = 0.0;
+        err_price = 0.0; err_delta = 0.0; err_vega = 0.0; err_gamma = 0.0;
+        avg_lr_delta = 0.0; avg_lr_vega = 0.0; avg_lr_gamma = 0.0;
+        err_lr_delta = 0.0; err_lr_vega = 0.0; err_lr_gamma = 0.0;
+      }
 
     __host__
       void AllocateHost(const int size) {
@@ -119,18 +159,19 @@ namespace demeter {
         err_lr_gamma = sqrt((lr_g_sum2 / size - (lr_g_sum / size) * (lr_g_sum / size)) / size);
       }
 
+    // TODO COllect statistics in full precision somehow
     __host__
       void PrintStatistics(bool print_header, const char* dev) {
         if (print_header) {
-          printf("%6s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s |\n",
-              "dev", "price", "err", "delta", "err", "vega", "err", "gamma", "err", "lr delta", "err", "lr vega", "err", "lr gamma", "err");
-          printf("----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n");
+          printf("%6s | %13s | %13s | %13s | %13s | %13s | %13s | %13s | %13s |\n",
+              "dev", "price", "err", "delta", "err", "vega", "err", "gamma", "err");
+          /* printf("----------------------------------------------------------------------------------------------------------------------------------------\n"); */
         }
-        printf("%6s | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f |\n",
-            dev, avg_price, err_price, avg_delta, err_delta, avg_vega, err_vega, avg_gamma, err_gamma, avg_lr_delta, err_lr_delta, avg_lr_vega, err_lr_vega, avg_lr_gamma, err_lr_gamma);
-        printf("\nVRF for delta = %13.8f\n", (err_lr_delta * err_lr_delta) / (err_delta * err_delta));
-        printf("VRF for vega  = %13.8f\n", (err_lr_vega * err_lr_vega) / (err_vega * err_vega));
-        printf("VRF for gamma = %13.8f\n\n", (err_lr_gamma * err_lr_gamma) / (err_gamma * err_gamma));
+        printf("%6s | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f | %13.8f |\n",
+            dev, avg_price, err_price, avg_delta, err_delta, avg_vega, err_vega, avg_gamma, err_gamma);
+        /* printf("\nVRF for delta = %13.8f\n", (err_lr_delta * err_lr_delta) / (err_delta * err_delta)); */
+        /* printf("VRF for vega  = %13.8f\n", (err_lr_vega * err_lr_vega) / (err_vega * err_vega)); */
+        /* printf("VRF for gamma = %13.8f\n\n", (err_lr_gamma * err_lr_gamma) / (err_gamma * err_gamma)); */
       }
   };
 } // namespace demeter

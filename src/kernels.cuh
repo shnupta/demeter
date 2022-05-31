@@ -31,13 +31,21 @@ namespace demeter {
   /* Main Monte Carlo simulation */
   template <class T>
   __global__ 
-  void MCSimulation(float *d_z, MCResults<float> d_results) {
+  void MCSimulation(float *d_z, float *d_path, MCResults<double> d_results,
+      MCMode mode) {
     T prod;
     // Index into random variables
     prod.ind = threadIdx.x + N*blockIdx.x*blockDim.x;
 
-    prod.SimulatePath(N, d_z); 
-    prod.CalculatePayoffs(d_results);
+    if (mode == MCMode::QUASI_BB)
+      prod.SimulatePathQuasiBB(N, d_z, d_path);
+    else 
+      prod.SimulatePath(N, d_z); 
+
+    if (mode == MCMode::STANDARD_AV)
+      prod.CalculatePayoffs(d_results, true);
+    else 
+      prod.CalculatePayoffs(d_results, false);
   }
 
 } // namespace demeter
