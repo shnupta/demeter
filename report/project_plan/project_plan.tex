@@ -1,0 +1,34 @@
+\chapter{Project Plan}
+
+\section{What I have achieved so far}
+I had little experience with computational finance and so I have focused on learning the requisite background mathematics and reading as much of the literature as possible. Thanks to recommendations from Dr. Bilokon, I have a few useful books on CUDA, AAD and parallel simulations, C++ implementations of financial algorithms and Monte Carlo methods for financial engineering.
+
+At this point in time I have finished following the CUDA book \cite{sanders2010cuda} and have also implemented an option pricing algorithm using the binomial method to get a feel for how the theory translates to practical implementation. Over the next week I will take a look at open source CUDA implementations of more financial algorithms as I'm sure some of these will be handy to have as a reference.
+
+\section{Starting points} \label{sec:StartingPoints}
+I will start by implementing the algorithm and improvements described by Dixon in \cite{dixon2012monte}. This will prove as a good exercise to familiarise myself with implementation challenges that I will continue to face throughout the project. It will also serve as a skeleton for all Monte Carlo-style algorithms that I implement, so much of the code will likely be reusable. I estimate this will take 1-2 weeks alongside completing my other modules this term. I also want to investigate some automatic adjoint differentiation libraries as being familiar with one will likely speed up the development process when I start implementing the "Fast Greeks" \cite{giles2005smoking} method for both \cite{dixon2012monte} and \cite{savickas2014super}.
+
+\section{Baseline and novel implementations} \label{sec:BaselineAndNovelImplementations}
+The next key objective will be implementing the algorithm described by Savickas \cite{savickas2014super} as this will serve as the baseline to which I will compare the novel implementations I develop. 
+
+The length of time to achieve this will depend on whether we can collaborate with Savickas or obtain the source code for the results described in the paper. In the case where we obtain the source code it will mean I can move straight to recording some baseline results (after fully understanding the code) and then implementing other approaches: Quasi-Monte Carlo and Vibrato Monte Carlo for derivatives with discontinuous payoff functions. I estimate these implementations and evaluating their results will take around 1-2 month's time. On the other hand, if neither collaboration nor the source code being available, it will likely take the same amount of time to implement the original algorithm before I can start working on any novelties.
+
+The novelty of the report will not be a new method, but rather the application of known methods to the GPU which have not been used in conjunction. There is scope here for a few different methods (such as the two I mentioned above) as well as others which I have not read into much detail about (payoff smoothing and those mentioned in Section \ref{sec:PossibleExtensions}). There is also possibility for me to focus on a different risk measure or application to alternative (exotic) options. The choice of methods will become clear once I have compared more of the literature and discussed this with Dr. Bilokon.
+
+\section{Deadlines}
+Deadlines for the tasks described in Section \ref{sec:StartingPoints} are a little hard to set right now as I've yet to implement any substantial algorithms. Given that I have other modules and exams to prepare for, I expect the progress to be slower these first two months. An appropriate worst case deadline would be the end of this term (late-March). My aim is to have a solid foundation to start work on the bulk implementation stated in Section \ref{sec:BaselineAndNovelImplementations} around the 20th of February.
+
+As a firm deadline, I would like to have a functional implementation of my novel approach to \cite{savickas2014super} by the 20th of May. This gives me ample time to focus on collecting results and writing the evaluation section of the report. I'd like to spend a couple weeks on this, which will give me the final two weeks before the report deadline to focus on polishing up what I have already written. On that note, I will continue to build up the report as I work on the project as it will require little effort to adapt the report due to implementation changes, and I do not want to rush the report towards the end of the project.
+
+\section{Possible extensions} \label{sec:PossibleExtensions}
+If time permits, I would really like to investigate adapting the Quasi-Monte Carlo conditional pathwise method for option Greeks \cite{ZhangConditionalQuasiMonteCarloMethod} on the GPU. My immediate impression is that this would be quite a challenge. However, if I have already implemented the aforementioned algorithms the experience should help to make it feasible (time permitting).
+
+\section{Other notes}
+A fall back plan for unexpected circumstances will be to implement \cite{savickas2014super} for a different simple asset type, or to apply Vibrato Monte Carlo to a simpler paper such as \cite{dixon2012monte}.
+
+Of course, the deadlines mentioned are flexible in the forwards direction (and I welcome that scenario) but they do serve as signposts to ensure I'm on the right track.
+
+I have also contacted someone I know at Optiver to see if they would be interested in collaborating on a similar project. If they are keen, then the project may take a slightly different angle but will involve most of the same material mentioned in this report so far.
+
+An important thing for me to keep in mind is the structure and style of results and analysis in the papers that I am reading. My top aim would be for this thesis to result in a published paper and so I need to ensure the style and structure of my report is similar to other papers. This also means I will have to develop my writing style further (as this is my first attempt at this type of writing) but I will make sure that it won't be much of an obstacle.
+

@@ -1,0 +1,39 @@
+\chapter{Introduction}
+
+Calculating sensitivities (Greeks) of the value of an option to underlying parameters such as volatility and interest rates, is vital to financial institutions performing risk management and developing hedging strategies. Their importance becomes more significant when we know that Greeks cannot be observed in the market directly, thus must be calculated from other data.
+
+Traditional finite-difference (FD) methods for calculating Greeks have easy implementations and few restrictions on the form of the payoff function, however they require resimulations which result in estimates with large variances, bias and increased computational effort compared with other methods. 
+
+The pathwise (PW) \cite{glasserman1991gradient} method does not require resimulation and provides unbiased estimators, however it relies on the continuity of the payoff function, therefore it is not applicable to options such as a binary Asian option and cannot be used to calculate most second-order Greeks where we typically see discontinuity introduced into the function.
+
+The likelihood ratio (LR) method does not require smoothness of the payoff function however it tends to result in estimates with large variance as it does not use properties of the payoff function.
+
+Introduced by Zhang and Wang, the Quasi-Monte Carlo-based conditional pathwise method (QMC-CPW) \cite{ZhangConditionalQuasiMonteCarloMethod} takes a conditional expectation of the payoff function which results in the discontinuous integrand being smoothed. They also show that the interchange of expectation and differentiation is possible, allowing the estimation of Greeks from the now smooth target function. Through proof of the smoothed payoff being Lipschitz continuous, the PW method is now applicable to provide unbiased estimators. They also show how many options can have infinitely differentiable target functions once the conditional expectation is taken, thus the PW method can be used to calculate second-order Greeks which normally is not possible.
+
+GPUs have been discussed extensively in literature. Particularly their application to finance problems. The highly parallel nature of Monte Carlo simulation for option Greeks lends itself well to the architecture of GPUs and the CUDA architecture. In this project we implement Monte Carlo methods which take advantage of the highly parallel nature of the GPU to gain advantages in speed and efficiency when calculating Greeks.
+
+First, the preliminaries are discussed and the core mathematics of stochastic processes, financial products, and random number generation is developed in Chapter \ref{cha:Preliminaries}. Background literature on topics such as the usage of Monte Carlo and their implementation on GPUs, variance reduction techniques, and methods for estimating Greeks are discussed in Chapter \ref{cha:Background}. In Chapter \ref{cha:Implementation} we detail the implementation of our experiment on both the GPU and CPU, followed by the results in Chapter \ref{cha:Results}. We then evaluate the results and conclude in Chapters \ref{cha:Evaluation} and \ref{cha:Conclusion}.
+
+\section{Objectives}
+The aim of this work is to apply QMC-CPW to calculate Greeks for options, whilst adapting the implementation to run efficiently on a GPU.
+
+Increased efficiency is not the only aim, but also the broadening of the set of financial products (such as those with discontinuous payoff functions) supported by the algorithm will provide further practical value. As opposed to other solutions developed for the GPU, we will produced unbiased estimates with low variance applicable to options with discontinuous payoff functions and for higher-order Greeks.
+
+\section{Challenges}
+Adapting algorithms to run on the GPU comes with many restrictions when compared to implementations on the CPU. Memory management and access patterns play a large role in the efficiency and speed when running kernels, so close attention must be paid during implementation to how the on-device memory is used.
+
+CUDA poses further limitations upon the general design of the software such as having separate memory spaces between host and device memory (this has been addressed by unified memory which has been available since toolkit version 6.0). Problems such as these are standard when programming with CUDA and require overhead on the developer's side to ensure code is written in a safe manner.
+
+\section{Contributions}
+The work presented in the report is motivated by the importance of calculating Greeks for many financial institutions. The need for efficient and accurate methods that can be applied to many types of financial options presents an opportunity to use recent methods for Greeks estimation in conjunction with GPUs, and to obtain both an increase in accuracy and speed. The contributions are as follows:
+
+\begin{enumerate}
+    \item Flexible models of "products" are implemented for the arithmetic Asian, binary Asian and lookback option types. They have a templated design which allows for minimal reproduction of simulation kernels.
+    \item GPU implementation of the Likelihood Ratio method for estimating Greeks which acts as a baseline to compare variance reduction factors of other methods. All methods estimate the \textit{delta}, \textit{vega}, and \textit{gamma} Greeks.
+    \item Implementation of the QMC-CPW method with standard and Quasi Monte Carlo simulation on both CPU and GPU. CPU implementations are serial and used for comparison of the speedup obtained by using the GPU.
+    \item For standard Monte Carlo simulations, antithetic variables are also implemented as a variance reduction technique.
+    \item For Quasi-Monte Carlo we perform Brownian bridge construction which produces Brownian path increments for use in simulation of the behaviour of the underlying asset, which leads to a variance reduction.
+    \item We show that the Quasi-Monte Carlo Conditional Pathwise method with Brownian bridge construction (QMC+BB-CPW) is the superior method in terms of accuracy with variance reduction factors of up to $1.0 * 10^{18}$ and with many in the hundreds of thousands and millions.
+    \item We show that using the GPU leads to a massive speedup over the CPU with even the slowest methods being more than $200$x faster.
+    \item Finally, it is shown that QMC+BB-CPW implemented on the GPU results in an efficient, accurate, and fast method for calculating first- and higher-order Greeks of options, and even those with discontinuous payoff functions. We find Quasi-Monte Carlo takes advantage of the increased smoothness in the integrand following the conditional expectation from CPW, and that the Brownian bridge construction results in further variance reduction.
+\end{enumerate}

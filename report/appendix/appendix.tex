@@ -1,0 +1,33 @@
+\appendix
+\chapter{GPU and CUDA specifications} \label{app:gpu-cuda-specs}
+
+CUDA toolkit version 11.2.1 was used for all of the software in this project. The online documentation for this version is available at \href{https://docs.nvidia.com/cuda/archive/11.2.1/}{https://docs.nvidia.com/cuda/archive/11.2.1/}.
+
+All simulations were ran on a single Tesla T4 GPU which has the Turing architecture with compute capability $7.5$. The general information for the device is listed below:
+
+\begin{table}[!h]
+\centering
+\begin{tabular}{c c}
+    \textbf{General Information} & \\
+    Name & Tesla T4 \\
+    Compute Capability & $7.5$ \\
+    Clock Rate (Hz) & $1590000$ \\
+    Device Copy Overlap & Enabled \\
+    Kernel Execution Timeout & Disabled \\ \\
+    \textbf{Memory Information} & \\
+    Global Memory & 15843721216 \\
+    Constant Memory & 65536 \\
+    Max Memory Pitch & 2147483647 \\
+    Texture Alignment & 512 \\ \\
+    \textbf{Multiprocessor Information} & \\
+    Multiprocessor Count & 40 \\
+    Shared Memory per MP & 49152 \\
+    Registers per MP & 65536 \\
+    Threads in Ward & 32 \\
+    Max Threads per Block & 1024 \\
+    Max Thread Dimensions & (1024, 1024, 64) \\
+    Max Grid Dimensions & (2147483647, 65536, 65535) \\
+\end{tabular}
+\caption{Tesla T4 specifications. Memory values are given in bytes.}
+\label{tbl:TeslaT4Specs}
+\end{table}

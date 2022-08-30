@@ -1,0 +1,23 @@
+\chapter{Conclusion} \label{cha:Conclusion}
+In this project we have presented a powerful method for calculating the Greeks of exotic options on the GPU. The Quasi-Monte Carlo Conditional Pathwise method developed by Zhang and Wang \cite{ZhangConditionalQuasiMonteCarloMethod} allows for smoothing of the integrands which Quasi-Monte Carlo methods take advantage of to efficiently estimate the Greeks. 
+
+Our implementation uses the highly parallel nature of GPUs to efficiently implement the Quasi-Monte Carlo simulation such that our solution is hundreds of times faster than a serial CPU implementation. As a variance reduction technique, Brownian bridge construction is used in conjunction with the CPW estimates to further reduce the error in our Greek estimates. We show that our implementation, QMC+BB-CPW, produces estimates with VRFs in the hundreds of thousands and even up to $1.0 * 10^{18}$ when compared to traditional methods such as the Likelihood Ratio method. When compared to other simulation methods such as MC+AV-CPW, our method outperforms for almost all Greek estimates of arithmetic Asian, binary Asian and lookback options over a range of strike prices.
+
+Whilst the results obtained are more than satisfactory, we do not achieve VRFs of the same magnitude as in \cite{ZhangConditionalQuasiMonteCarloMethod}. This is likely due to their implementation using Gradient Principle Component Analysis as a variance reduction technique which reduces the effective dimension, allowing Quasi-Monte Carlo methods to be even more efficient.
+
+\section{Future work} \label{sec:FutureWork}
+There are many possible extensions to the project, from a wide variety of angles. We could implement QMC-CPW for other volatility models such as the Heston model, however this would require a substantial amount of work as the form of all estimates would be vastly different to those presented in this paper. 
+
+A second direct change to the code could be using other random number generation methods. Although we used the built-in cuRAND generators, there is scope to write our own random number generators that are faster than cuRAND's and give us more flexibility in the output ordering and scrambling. 
+
+Both of these changes could be enabled easily by interfacing out the random number generation and volatility models much like our current product implementation.
+
+\subsection{Improved VRFs}
+As mentioned earlier, our method does not achieve as large VRFs as we know are possible. To improve this, we could implement further variance reduction techniques such as (Gradient) Principle Component Analysis. Techniques such as this help Quasi-Monte Carlo methods to more efficiently estimate integrals as they are thought to reduce the effective dimension, which in the finance setting can be extremely useful due to the high-dimensionaility of many problems.
+
+\subsection{Producing a polished product}
+Moving away from improving the current experimental-style of the project, we could work to build a more polished software solution. This would include some of the previously mentioned improvements such as interfacing out the volatility model and random number generator, but also adding more option types and other financial products. 
+
+Adding more flexibility to the software would also be a key requirement. Spending time researching the best methods for allowing the use dynamic data structures in kernels would be important. Also, the ability to freely, efficiently, and easily move objects from host to device and vice-versa would be very useful. We could attempt to do this through unified memory but could also restrict the software to GPU-only uses whereas we think it is evident that much of the software would be useful for CPU-only programs as well.
+
+An idea for a specific software product would be wrapping our implementation in some networking logic such that it could act as a microservice for calculating Greeks to be used inside of a larger risk-management system. It would receive parameters such as stock price, implied volatility and the expiration dates from the input bus, process these values to produce estimates for Greeks and publish them to other microservices.

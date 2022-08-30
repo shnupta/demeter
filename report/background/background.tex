@@ -1,0 +1,328 @@
+\chapter{Background} \label{cha:Background}
+This chapter provides an overview of developments in computational finance and the areas with which this project focuses on.
+
+\section{Calculating Greeks}
+Calculating price sensitivities (Greeks) is arguably more important than prices themselves. This is due to the use of Greeks for risk management and hedging. The calculation of Greeks requires significant computational effort when compared to that of determining derivative prices thus efficient implementation of algorithms for obtaining sensitivities is key for financial institutions.
+
+\subsection{Finite-difference method}
+The simplest method for obtaining sensitivities is based on the finite-difference approach. Within the Monte Carlo framework this involves running multiple simulations of a pricing routine over a range of values of input parameters. For example, determining the delta of a call option would involve running simulations for different values of the underlying price and observing the changes in the resulting option price. To obtain the derivative of an options price with respect to input parameter $\theta$ we would estimate 
+
+\begin{equation*}
+    \frac{\partial V(t, \theta)}{\partial \theta} \approx \frac{V(t, \theta + h) - V(t, \theta)}{h},
+\end{equation*}
+
+where $V(t, \theta)$ is the value of the payoff of the option at time $t$ and some small $h \in \mathbb{R}^+$ known as the "bump size".
+
+The finite-difference method is intuitive and easy to implement, however it requires significantly higher computation time as the number of input parameters grows and suffers from poor bias and variance properties.
+
+\subsection{Pathwise method} \label{sec:PathwiseMethod}
+An alternative to finite-difference is the pathwise method. Developed by Glasserman \cite{glasserman1991gradient} and explained further by Broadie and Glasserman \cite{broadie1996estimating}, the pathwise method has two main benefits: increased computational speed and unbiased estimates. To explain the pathwise method, let us consider the calculation of the delta of a vanilla European call option on a stock that satisfies (\ref{eqn:BlackScholesSDE}). Let $Y$ denote the present value of the payoff
+
+\begin{equation*}
+    Y = e^{-rT}[S(T) - K]^+.
+\end{equation*}
+
+Applying the chain rule we obtain
+
+\begin{equation} \label{eqn:ChainRuleOptionDelta}
+    \frac{\partial Y}{\partial S(0)} = \frac{\partial Y}{\partial S(T)} \frac{\partial S(T)}{\partial S(0)}.
+\end{equation}
+
+Observe that (\ref{eqn:STsolution}) is linear in $S(0)$ and so $\partial S(T)/ \partial S(0) = S(T)/S(0)$. We have $\partial Y/ \partial S(T) = e^{-rT}\textbf{1}\{S(T) > K\}$, combining the two gives us the pathwise estimator for the delta
+
+\begin{equation} \label{eqn:PathwiseDeltaEstimate}
+    \frac{\partial Y}{\partial S(0)} = e^{-rT} \frac{S(T)}{S(0)} \textbf{1}\{S(T) > K\}.
+\end{equation}
+
+We can obtain other first-order and higher-order derivatives through similar means. It can be seen that (\ref{eqn:PathwiseDeltaEstimate}) is easily evaluated and has been shown to be an unbiased estimator \cite{broadie1996estimating}. The method can also be applied to path-dependent options and provides a lot of practical value for options with no closed-form solution (such as Asian options). Further, as many of the factors used in calculating an options price are present in the pathwise estimators, little effort is required to add them to an existing pricing implementation.
+
+To provide context of how pathwise is used within Monte Carlo, let us consider calculating the delta of a derivative security with multiple underlying assets and payoff function $f$. We model the evolution of a stock price such that it satisfies a similar SDE to (\ref{eqn:BlackScholesSDE}) but where $W$ is a $d$-dimensional Brownian motion, and we are approximating the price using a Euler scheme with timestep $h = T/N$, we can write the Euler approximation at time $nh$ as follows:
+
+\begin{equation} \label{eqn:EulerApproximation}
+    \hat{S}(n + 1) = \hat{S}(n) + a(\hat{S}(n))h + b(\hat{S}(n)) Z(n+1) \sqrt{h}, \quad \hat{S}(0) = S(0), 
+\end{equation}
+
+with $a(\cdot) \in \mathbb{R}^m$, $b(\cdot) \in \mathbb{R}^{m \times d}$ and $Z(1), Z(2), \dots$ are $d$-dimensional standard normal random vectors. (\ref{eqn:EulerApproximation}) then takes the form
+
+\begin{equation} \label{eqn:EulerMatrixForm}
+    \hat{S}(n + 1) = F_n(\hat{S}(n)),
+\end{equation}
+
+with $F_n$ a matrix transformation $\mathbb{R}^m \to \mathbb{R}^m$. Then we can perform similar operations as in (\ref{eqn:ChainRuleOptionDelta}), we obtain the pathwise estimate of the delta
+
+\begin{equation} \label{eqn:MatrixPathwiseDeltaEstimate}
+    \sum_{i=1}^m \frac{\partial f(\hat{S}(N)}{\partial \hat{S}_i(N)} \Delta_{ij}(N)
+\end{equation}
+
+with
+
+\begin{equation*}
+    \Delta_{ij}(n) = \frac{\partial \hat{S}_i(n)}{\partial \hat{S}_j(0)}, \quad i,j = 1, \dots, m.
+\end{equation*}
+
+This can be written as a matrix recursion
+
+\begin{equation} \label{eqn:DeltaMatrixRecursion}
+    \Delta (n + 1) = G(n) \Delta (n), \quad \Delta (0) = I,
+\end{equation}
+
+where $G(n)$ represents the derivative of the transformation $F_n$ and $\Delta (n)$ is the $m \times m$ matrix with entries $\Delta_{ij}(n)$.
+
+There are some limitations to the pathwise method, namely the payoff function must be Lipschitz continuous but there exist other methods to overcome this problem such as smoothing the payoff function, using the Likelihood Ratio Method (LRM) (see \ref{sec:LikelihoodRatioMethod}) or an alternative form of Monte Carlo simulation such as "Vibrato" Monte Carlo \cite{giles2009vibrato}.
+
+\subsection{Likelihood ratio method} \label{sec:LikelihoodRatioMethod}
+Rather than view the final state of a stock price as a random variable, as in (\ref{eqn:STsolution}), we can look from the perspective of a probability distribution \cite{broadie1996estimating}. For an option with payoff function $Y = f(S(T))$ and underlying satisfying (\ref{eqn:BlackScholesSDE}) such that the payoff is expressed as a function of a random vector $X = (X_1,\dots,X_d)$, its value can be written as
+
+\begin{equation} \label{eqn:OptionValueProbabilityForm}
+    V = E[f(Y)] = \int f(x) g_\theta (x) dx,
+\end{equation}
+
+where $g_\theta$ is probability density function of $X$. Supposing that the interchange of order between integration and differentiation holds, we can take the derivative of (\ref{eqn:OptionValueProbabilityForm}) with respect to an input parameter $\theta$ to obtain the likelihood ratio estimator
+
+\begin{equation} \label{eqn:LRUnbiasedEstimate}
+    \frac{\partial V}{\partial \theta} = \int f(x) \frac{g^\prime_\theta(x)}{g_\theta(x)} g_\theta(x)dx = E\left[f(X) \frac{g^\prime_\theta(X)}{g_\theta(X)} \right].
+\end{equation}
+
+As probability densities are generally continuous we can apply the LRM to calculate Greeks for derivatives with discontinuous payoff functions and, as with the pathwise method, it works well for path-dependent options.
+
+A weakness of LRM lies in its $O(h^{-1})$ estimator variance where $h$ is the timestep for the path discretisation in simulation.
+
+\section{Monte Carlo methods}
+Monte Carlo simulation is an essential tool in computational finance for calculating prices of derivatives and their sensitivities to input parameters, commonly known as the "Greeks". The application of Monte Carlo simulation to pricing derivatives was first developed by Boyle in 1977 \cite{BOYLE1977323} and has shown to be an efficient method for high-dimensional problems. The ease of implementation and intuitiveness behind Monte Carlo have continued to make it a key approach for many problems in computational finance \cite{glasserman2004monte}.
+
+Following Boyle's seminal paper, application of Monte Carlo methods to many problems in finance and the acceleration of implementations became a focus in literature. For a review of early Monte Carlo methods and their use for calculating derivatives prices see \cite{boyle1997monte}.
+
+Broadie and Glasserman \cite{broadie1996estimating} develop two techniques which allow for increased computational speed over the traditional finite-difference method when calculating derivative sensitivities through Monte Carlo simulation. The basics of these two methods are detailed in \ref{sec:PathwiseMethod} and \ref{sec:LikelihoodRatioMethod}. These "direct methods" not only speed up simulation but provide \textit{unbiased estimators} for sensitivities, unlike finite-difference, and work for path-dependant options.
+
+The issue of discontinuous payoff functions has been discussed extensively in literature and still continues to be a popular topic. Giles presents the "Vibrato" Monte Carlo method \cite{giles2009vibrato} which combines the adjoint pathwise approach for the stochastic path evolution, with the likelihood ratio method (LRM) for evaluation of the payoff function. He shows that when the payoff function is discontinuous the resulting estimator has variance $O(h^{-1/2})$, where $h$ is the timestep for the path discretisation, and $O(1)$ when the payoff is continuous. The numerical results presented show its superior efficiency when compared to standard LRM.
+
+\subsection{GPU implementations}
+There are several properties of Monte Carlo which make it attractive for an implementation with high parallelism, thus in recent years much work has been done on using GPUs to accelerate these simulations.
+
+Dixon et al. \cite{dixon2012monte} show that Monte Carlo is well suited to implementation on a high performance GPU and discuss methods for accelerating Value-at-Risk estimation through several key implementation techniques. More recently, the techniques discussed in \ref{sec:PathwiseMethod} paired with Algorithmic Adjoint Differentiation (AAD) have also seen implementation on the GPU \cite{savickas2014super} and have shown speed-ups of over 10 times when compared to traditional finite difference methods on GPUs, and more than 70 times when compared to multi-core CPU implementations.
+
+\section{Variance reduction techniques}
+Boyle et al. \cite{boyle1997monte} discuss variance reduction techniques and show that their application reduces the error in estimates, thus increasing the efficiency of Monte Carlo simulation. In its simplest form, the argument for variance reduction techniques to increase \textit{efficiency}. If we have two (unbiased) Monte Carlo estimates for parameter $\theta$, denoted by $\{ \hat{\theta}_i^{(1)}, i = 1, 2, \dots \}$ and $\{ \hat{\theta}_i^{(2)}, i = 1, 2, \dots \}$, with $b^{(j)}, j = 1, 2$, the computational work required to generate one replication of $\hat{\theta}^{(j)}$, then we would choose estimator $1$ over $2$ if
+
+\begin{equation} \label{eqn:EstimatorEfficiencyComparison}
+    \sigma_1^2 b_1 < \sigma_2^2 b_2,
+\end{equation}
+
+where $\sigma_j^2$ is the variance of the estimator $\hat{\theta}^{(j)}$. We can take the product of variance and computational work to be a measure of the efficiency, thus use (\ref{eqn:EstimatorEfficiencyComparison}) as a way to compare multiple Monte Carlo estimators. We briefly detail some of the common techniques to reduce variance in the following sections. For further explanation, the reader is referred to \cite{glasserman2004monte} and \cite{boyle1997monte}.
+
+\subsection{Antithetic variables} \label{sec:antitheticvariables}
+The idea behind antithetic variables comes from the fact that if $Z_i$ has standard normal distribution, then $-Z_i$ also does. Therefore, if we have generated a sample path from inputs $Z_1, \dots, Z_n$ we can generate a second path $-Z_1, \dots, -Z_n$. The variables $Z_i$ and $-Z_i$ form an \textit{antithetic pair} such that a large value in an estimate obtained from $Z_i$ will be paired with a small value obtained from $-Z_i$.
+
+As an example, let $C$ denote the value of a vanilla European call option. We have an existing unbiased estimate $C_i$ generated as in line 4 of Algorithm \ref{alg:EstimateExpectedPayoff} in \ref{sec:MonteCarloPriciples}. From the idea described above, we can generate a second unbiased estimate $\tilde{C_i}$, from a sample terminal stock price using $-Z_i$. Therefore, we can take
+
+\begin{equation*}
+    \hat{C}_{AV} = \frac{1}{n} \sum_{i=1}^n \frac{C_i + \tilde{C_i}}{2}
+\end{equation*}
+
+as an unbiased estimator for the call price. Heuristically, estimates obtained from $n$ antithetic pairs ${Z_i, -Z_i}$ are distributed more regularly than a collection of $2n$ independent samples, thus may reduce variance. It can be shown that the requirements to increase efficiency when calculating $\hat{C}_{AV}$ are easily satisfied for estimators of options that depend monotonically on inputs (e.g. European and Asian options) \cite{boyle1997monte}.
+
+\subsection{Control variates}
+Control variates use the idea that exploiting errors in estimates of \textit{known} quantities, allows you to evaluate an estimate for an \textit{unknown} quantity through their difference.
+
+Suppose we have the unbiased estimate $\hat{X}$ for the unknown expectation $X = E[\hat{X}]$, from a single simulated path. We can also calculate another output $\hat{Y}$ where the expectation $Y = E[\hat{Y}]$ is known. We can write
+
+\begin{equation*}
+    X = Y + E[\hat{X} - \hat{Y}].
+\end{equation*}
+
+Simply, $X$ can be expressed as the known value $Y$ plus the expected difference. This provides the unbiased estimator
+
+\begin{equation*}
+    \hat{X}_{CV} = \hat{X} + (Y - \hat{Y}),
+\end{equation*}
+
+where the observed error $(Y - \hat{Y})$ is the \textit{control} in the estimation of $X$.
+
+It is shown that the estimator $\hat{X}_{CV}$ has smaller variance than the estimator $\hat{X}$ when the correlation between $X$ and $Y$ is large \cite{boyle1997monte}. Given that little additional effort is required to calculate the control variate, the method provides good computational speed up when the previous condition holds.
+
+\subsection{Importance sampling}
+Importance sampling uses the idea that expectations from two probability measures can be expressed in terms of each other, and by switching measure we can reduce variance. The change of measure is used to give more weight to "important" results in order to obtain a more efficient estimator.
+
+Consider the problem of estimating
+
+\begin{equation*}
+    \alpha = E[f(X)] = \int f(x) p(x) dx,
+\end{equation*}
+
+where $X \in \mathbb{R}^d$ is a random variable with probability density $p$ and $f$ is some function $\mathbb{R}^d \to \mathbb{R}$. The Monte Carlo estimate 
+
+\begin{equation*}
+    \hat{\alpha} = \frac{1}{n} \sum_{i=1}^n f(X_i)
+\end{equation*}
+
+with $X_i$ i.i.d random samples from $p$. Through change of measure we can rewrite our estimate as
+
+\begin{equation*}
+    \hat{\alpha}_q = \frac{1}{n} \sum_{i=1}^n f(X_i) \frac{p(X_i)}{q(X_i)},
+\end{equation*}
+
+with $q$ as some other probability density satisfying $p(x) > 0 \Rightarrow q(x) > 0$. The value $p(X_i)/q(X_i)$ is known as the \textit{likelihood ratio} and through careful selection of the importance sampling distribution $q$, we can obtain estimates with lower variance than those from the original probability measure $p$.
+
+% \section{Algorithmic Adjoint Differentiation} \label{sec:AAD}
+% Giles and Glasserman present an adjoint method \cite{giles2005smoking} to accelerate the standard pathwise implementation for calculating derivative sensitivities. Note that in \ref{sec:PathwiseMethod} we describe how the calculation of the delta of a derivative security can be written as a matrix recursion. Evaluating the pathwise estimate in the \textit{forward} direction (i.e. right to left) incurs a cost of $O(D^3)$ where $D$ is the dimension of the SDE. However, if we evaluate in the reverse directions (i.e. left to right), results in a sequence of vector-matrix multiplications with cost $O(D^2)$ - requiring much less computation especially when $D$ is large, as is often the case.
+
+% Looking back at (\ref{eqn:EulerApproximation}) and (\ref{eqn:EulerMatrixForm}), we can write the row vector of partial derivatives of $f$ with respect to $\hat{S}(0)$ as
+
+% \begin{equation} \label{eqn:ReversePathwiseEstimate}
+%     \frac{\partial f}{\partial \hat{S}(0)} = \frac{\partial f}{\partial \hat{S}(N)}\Delta (N) = \frac{\partial f}{\partial \hat{S}(N)} G(N) G(N-1)\dots G(0) \Delta (0).
+% \end{equation}
+
+% This then gives us the iterative formulation
+
+% \begin{equation}
+%     V(n) = G(n)^\top V(n+1), \quad V(N) = \left(\frac{\partial f}{\partial \hat{S}(N)}\right)^\top.
+% \end{equation}
+
+% The adjoint method works well for problems with a large number of inputs relative to the number of outputs. This is because for each simulated path, the payoff $f(N)$ is fixed. To contrast, the standard pathwise method works well when there are a large number of outputs relative to a small number of inputs as multiple payoffs can be calculated once the matrices $\Delta(n)$ have been evaluated.
+
+% Due to the adjoint method running backwards in time from $N, N-1, \dots, 0$, we must store the vectors $\hat{S}(0), \dots, \hat{S}(N)$ for use when calculating the $G(n)$. As we often simulate over many time steps, the storage required for these vectors would become an issue - especially on the GPU.
+
+% The practical benefit of the adjoint method is seen when applied through the programming technique known as \textit{algorithmic adjoint differentiation} (AAD). AAD is a ground-breaking technique that can produce derivative sensitivities to calculation code, automatically and in \textit{constant time} \cite{savine2018aad}. In recent years, AAD has become an essential tool in quantitative finance. In particular it has enabled banks to accurately calculate, and with incredible speed, sensitivities for key measures like CVA.
+
+% Capriotti and Giles \cite{capriotti2010fast} discuss the application of AAD to calculating sensitivities on a portfolio of default options and show that it results in computational savings of several orders of magnitude when compared to standard methods.
+
+% Gremse et al. \cite{GREMSE2016300} then show how adapting AAD to run on GPUs can result in further speed-ups making the parallel GPU implementation several times faster than on a CPU.
+
+\section{Quasi-Monte Carlo-based conditional pathwise method} \label{sec:qmc-cpwmethod}
+As an extension to the Pathwise method described in \ref{sec:PathwiseMethod}, Zhang and Wang \cite{ZhangConditionalQuasiMonteCarloMethod} introduce the Quasi-Monte Carlo-based conditional pathwise method.
+
+Let us denote the discounted payoff of an option $g(\theta,\boldsymbol{x})$ as
+
+\begin{equation} \label{eqn:QmcCpwDiscountedPayoff}
+    g(\theta,\boldsymbol{x}) = h(\theta,\boldsymbol{x})\boldsymbol{1}\{p(\theta,\boldsymbol{x}) > 0\},
+\end{equation}
+
+where $h(\theta,\boldsymbol{x})$ and $p(\theta,\boldsymbol{x})$ are continuous functions of $\theta$ and $\boldsymbol{x}$. The function $p(\theta,\boldsymbol{x})$ is said to satisfy the \textit{variable separation condition} if
+
+\begin{equation} \label{eqn:QmcCpwVariableSeparation}
+    \boldsymbol{1}\{p(\theta,\boldsymbol{x}) > 0\} = \boldsymbol{1}\{\psi_d(\theta,\boldsymbol{z}) < x_j < \psi_u(\theta,\boldsymbol{z})\},
+\end{equation}
+
+for some variable $x_j$, where $\psi_d(\theta,\boldsymbol{z})$ and $\psi_u(\theta,\boldsymbol{z})$ are functions of $\theta$ and $\boldsymbol{z}$ where
+
+\begin{equation*}
+    \boldsymbol{z} = (x_1,\dots,x_{j-1},x_{j+1},\dots,x_d)^\top.
+\end{equation*}
+
+Then, if $p(\theta,\boldsymbol{z})$ satisfies (\ref{eqn:QmcCpwVariableSeparation}), the discounted payoff in (\ref{eqn:QmcCpwDiscountedPayoff}) can be written as
+
+\begin{equation} \label{eqn:QmcCpwPayoffSeparated}
+    g(\theta,\boldsymbol{x}) = h(\theta,\boldsymbol{x})\boldsymbol{1}\{\psi_d(\theta,\boldsymbol{z}) < x_j < \psi_u(\theta,\boldsymbol{z})\}.
+\end{equation}
+
+Using Fubini's theorem, the discounted payoff $g(\theta,\boldsymbol{x})$ is first integrated with respect to $x_j$, such that we can write the price of the option as $E[G(\theta,\boldsymbol{z})]$ where 
+
+\begin{equation} \label{eqn:QmcCpwNewTargetDefinition}
+    E[g(\theta,\boldsymbol{x})|\boldsymbol{z}] = \int_{\psi_d}^{\psi_u}{h(\theta,\boldsymbol{x})\rho_j(x_j)dx_j\boldsymbol{1}\{\psi_d(\theta,\boldsymbol{z}) < \psi_u(\theta,\boldsymbol{z})\}} = G(\theta, \boldsymbol{z}),
+\end{equation}
+
+and we assume can be found analytically. We can then interchange expectation and differentiation (as with the pathwise method) to obtain estimates of Greeks.
+
+Zhang and Wang show that the discounted payoffs of many options under the Black-Scholes model satisfy the variable separation condition. Following proof that the interchange of expectation and differentiation is valid, and defining the new target function $G(\theta,z)$ as the expectation of the discounted payoff (\ref{eqn:QmcCpwPayoffSeparated}) conditioned on $z$, it is shown that the new estimate for the sensitivity of the payoff to parameter $\theta$ is unbiased even when the original payoff (\ref{eqn:QmcCpwDiscountedPayoff}) is not continuous.
+
+It can be easily shown that $G(\theta,z)$ is a continuous function of $z$ (demonstrated by Theorem A.1 in Appendix 1 of \cite{ZhangConditionalQuasiMonteCarloMethod}). Using the idea of variable separation and taking the conditional expectation, the new target function is smoother than the original payoff function, therefore benefits from QMC in practice.
+
+\subsection{Simulating stock price for variable separation} \label{sec:VariableSeparationPathSimulation}
+In order to understand the example in \ref{sec:BaDeltaExample} we must first understand how to simulate the underlying asset's price movement such that variable separation is possible. Here we give a brief overview of the method described in \cite{ZhangConditionalQuasiMonteCarloMethod}, and continuing on from the preliminary information described in the previous chapter. Following on from (\ref{eqn:BlackScholesSDE}) and (\ref{eqn:STsolution}), let
+
+\begin{equation} \label{eqn:Stilde1}
+\begin{aligned}
+    \widetilde{S}(t_j) &= S(0)\exp{(\omega(t_j - t_1) + \sigma(W(t_j) - W(t_1)))} \\
+    &= S(0)\exp{(\omega(t_j - t_1) + \sigma\widetilde{W}(t_j - t_1))},
+\end{aligned}
+\end{equation}
+
+where $\widetilde{W}(t) = W(t + t_1) - W(t_1)$. It is easy to see that $\widetilde{W}(t)$ is also a standard Brownian motion. From (\ref{eqn:STsolution}) and (\ref{eqn:Stilde1}) we have
+
+\begin{equation}
+    S(t_j) = \widetilde{S}(t_j)\exp{(\omega t_1 + \sigma W(t_1))}.
+\end{equation}
+
+Let $\widetilde{\boldsymbol{W}} = (\widetilde{W}(t_2 - t_1),\dots,\widetilde{W}(t_d - t_1))^\top$ and note that $W(t_1)$ and $\widetilde{\boldsymbol{W}}$ are independent and normally distributed so we are able to generate them as follows
+
+\begin{equation}
+    W(t_1) = \sqrt{t_1}x_1, \quad x_1 \sim N(0, 1),
+\end{equation}
+\begin{equation} \label{eqn:WboldTilde}
+    \widetilde{\boldsymbol{W}} = \boldsymbol{Az}, \quad \boldsymbol{z} \sim N(\boldsymbol{0}_{d-1}, \boldsymbol{I}_{d-1}),
+\end{equation}
+
+where $\boldsymbol{z} = (x_2,\dots,x_d)^\top$. $\boldsymbol{0}_{d-1}$ is a $d-1$ dimensional zero column vector and $\boldsymbol{I}_{d-1}$ is $d-1$ dimensional identity matrix. The $(d-1) \times (d-1)$ matrix $\boldsymbol{A}$ satisfies $\boldsymbol{AA}^\top = \boldsymbol{\Sigma}$ where
+
+\begin{equation*}
+    \boldsymbol{\Sigma} = 
+    \begin{pmatrix}
+    t_2 - t_1 & t_2 - t_1 & \dots & t_2 - t_1 \\
+    t_2 - t_1 & t_3 - t_1 & \dots & t_3 - t_1 \\
+    \vdots & \vdots & \ddots & \vdots \\
+    t_2 - t_1 & t_3 - t_1 & \dots & t_d - t_1 \\
+    \end{pmatrix}
+\end{equation*}
+
+There exists much literature on the choice of the matrix $\boldsymbol{A}$, and a good path generation method can reduce the error of the estimates produced.
+
+From (\ref{eqn:Stilde1})-(\ref{eqn:WboldTilde}) we obtain
+
+\begin{equation} \label{eqn:StjFinal}
+    S(t_j) = \widetilde{S}(t_j)\exp{(\omega t_1 + \sigma \sqrt{t_1}x_1)}.
+\end{equation}
+
+It is clear to see that the stock price $S(t_j)$ at time $t_j$ is a product of the exponential term, and $\widetilde{S}(t_j)$, which are functions of $x_1$ and $\boldsymbol{z}$ respectively. This fact allows many options to satisfy the variable separation conditions, thus we are able to take the conditional expectation to find $G(\theta,\boldsymbol{z})$ and differentiate with respect to the parameter of interest.
+
+\subsection{Example: Binary Asian delta by QMC-CPW} \label{sec:BaDeltaExample}
+As an example, let us consider the calculation of the delta of a binary Asian option with discounted payoff
+
+\begin{equation}
+    g(\theta,\boldsymbol{x}) = e^{-rT}\boldsymbol{1}\{S_A > K\}
+\end{equation}
+
+where $S_A$ is the arithmetic average of the stock price $S(t_j)$ and $K$ is the strike. Then from the definition of $S(t_j)$ we obtain
+
+\begin{equation} \label{eqn:SADefinition}
+    S_A = \exp{(\omega t_1 + \sigma \sqrt{t_1}x_1)} \frac{1}{d} \sum_{j=1}^{d}{\widetilde{S}(t_j)} = \widetilde{S}_A \exp{(\omega t_1 + \sigma \sqrt{t_1}x_1)},
+\end{equation}
+
+with $\widetilde{S}_A$ as the arithmetic average of $\widetilde{S}(t_j)$ for $j = 1,\dots,d$. From (\ref{eqn:SADefinition}) we can see that
+
+\begin{equation*}
+    \{S_A > K\} = \{x_1 > \psi_d\},
+\end{equation*}
+
+where
+
+\begin{equation*}
+    \psi_d = \frac{\ln{K} - \ln{\widetilde{S}_A} - \omega t_1}{\sigma \sqrt{t_1}}
+\end{equation*}
+
+and is a function of $\boldsymbol{z}$ only. From this we have achieved the variable separation form listed in (\ref{eqn:QmcCpwVariableSeparation}). We are now able to calculate the analytical solution of $G(\theta, \boldsymbol{z})$:
+
+\begin{equation} \label{eqn:GAnalyticalSolution}
+    \begin{aligned}
+    E[g(\theta,\boldsymbol{x})|\boldsymbol{z}] &= \int_{-\infty}^{+\infty}{e^{-rT}\boldsymbol{1}\{S_A > K\}\phi(x_1)dx_1} \\
+    &= \int_{-\infty}^{+\infty}{e^{-rT}\boldsymbol{1}\{x_1 > \psi_d\}\phi(x_1)dx_1} \\
+    &= \int_{\psi_d}^{+\infty}{e^{-rT}\phi(x_1)dx_1} \\
+    &= e^{-rT}[1 - \Phi(\psi_d)] = G(\theta,\boldsymbol{z}).
+    \end{aligned}
+\end{equation}
+
+Here $\phi(x)$ and $\Phi(x)$ note the normal density function and the normal cumulative distribution function respectively. The proof of validity of interchange of expectation and differentiation will not be shown here and the reader is referred to \cite{ZhangConditionalQuasiMonteCarloMethod} for further details.
+
+By taking differentiation of (\ref{eqn:GAnalyticalSolution}) with respect to the initial stock price $S(0)$ we obtain the conditional pathwise estimate for the delta:
+
+\begin{equation*}
+    \begin{aligned}
+    \frac{ \partial G }{ \partial S(0)} &= -e^{-rT} \phi(\psi_d) \frac{\partial \psi_d}{ \partial S(0)} \\
+    &= e^{-rT} \phi(\psi_d) \frac{1}{\sigma \sqrt{t_1}} \frac{1}{\widetilde{S}_A} \frac{\widetilde{S}_A}{S(0)} \\
+    &= \frac{e^{-rT}}{S(0)\sigma \sqrt{t_1}}\phi(\psi_d).
+    \end{aligned}
+\end{equation*}
+
+\section{Related work}
+As previously mentioned, the QMC-CPW method \cite{ZhangConditionalQuasiMonteCarloMethod} can be viewed as an extension to the PW method developed by Glasserman \cite{glasserman1991gradient}. In their paper, Zhang and Wang consider the relationship of QMC-CPW with current methods other than traditional PW. They show the similarity in the estimates produced by Lyuu and Teng in their LT method \cite{LyuuYuh-Dauh2010UaeG} despite approaching the problem from different perspectives.
+
+The idea of conditional Monte Carlo is not new however, and has been covered widely. Boyle and Glasserman \cite{boyle1997monte} discuss how the technique exploits the variance reducing property of conditional expectation such that for two random variables $X$ and $Y$, $Var[E[X|Y]] \le Var[X]$, typically with a strict inequality except in a few trivial cases. The variance reduction is effectively achieved because we are doing part of the integration analytically by conditioning, leaving a simpler task for Monte Carlo simulation. Glasserman also discusses taking conditional expectation in order to smooth the discounted payoff. In section 7.2 of \cite{glasserman2004monte} we see the idea of conditional expectation applied to a digital payoff such that the traditional PW method can be used to obtain and unbiased estimate for the delta (which is not possible with PW alone).

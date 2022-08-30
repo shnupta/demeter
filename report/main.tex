@@ -1,0 +1,69 @@
+\documentclass[a4paper, twoside]{report}
+
+%% Language and font encodings
+\usepackage[english]{babel}
+\usepackage[utf8x]{inputenc}
+\usepackage[T1]{fontenc}
+
+%% Sets page size and margins
+\usepackage[a4paper,top=3cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+%% Useful packages
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage[colorinlistoftodos]{todonotes}
+\usepackage[colorlinks=true, allcolors=black]{hyperref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{float}
+\usepackage{underscore}
+\usepackage{subfigure}
+
+\newcolumntype{C}{>{$}c<{$}} % math-mode version of "l" column type
+
+\title{Quasi-Monte Carlo methods for calculating derivatives sensitivities on the GPU}
+\author{Casey Williams}
+% Update supervisor and other title stuff in title/title.tex
+
+\begin{document}
+\input{title/title.tex}
+
+\begin{abstract}
+The calculation of option Greeks is vital for risk management. Traditional pathwise and finite-difference methods work poorly for higher-order Greeks and options with discontinuous payoff functions. The Quasi-Monte Carlo-based conditional pathwise method (QMC-CPW) for options Greeks allows the payoff function of options to be effectively smoothed allowing for increased efficiency when calculating sensitivities. Also demonstrated in literature is the increased computational speed gained by applying GPUs to highly parallelisable finance problems such as calculating Greeks. In this report QMC-CPW is paired with simulation on the GPU using the CUDA platform. We estimate the delta, vega and gamma Greeks of three exotic options: arithmetic Asian, binary Asian, and lookback. Not only are the benefits of QMC-CPW shown through variance reduction factors of up to $1.0 * 10^{18}$, but the increased computational speed through usage of the GPU is shown as we achieve speedups over sequential CPU implementations of more than $200$x for our most accurate method.
+\end{abstract}
+
+
+\renewcommand{\abstractname}{Acknowledgements}
+\begin{abstract}
+I would like to thank my supervisor Dr. Paul Bilokon for his support throughout this project.
+\\
+\\
+I also wish to extend my thanks to Prof. Mike Giles of the University of Oxford for all of the help he has very kindly given.
+\\
+\\
+Finally, thank you to the friends I have made over these past few years and to my family, for all the memories and support.
+\end{abstract}
+
+\tableofcontents 
+\listoffigures
+\listoftables
+\listofalgorithms
+
+\input{introduction/introduction.tex}
+\input{preliminaries/preliminaries.tex}
+\input{background/background.tex}
+%\input{project_plan/project_plan}
+%\input{evaluation_plan/evaluation_plan}
+\input{project/project.tex}
+\input{evaluation/evaluation.tex}
+\input{conclusion/conclusion.tex}
+\input{ethical/ethical.tex}
+
+\bibliographystyle{vancouver}
+\bibliography{bibs/bibliography}
+
+\input{appendix/appendix.tex}
+
+\end{document}
